@@ -28,10 +28,8 @@ const ALLOWED = new Set([
   'get_options',
   'create_transaction',
   'list_transactions',
-  'list_receivables',
   'settle',
   'reverse_transaction',
-  'check_consistency',
 ])
 
 function json(status: number, body: unknown): Response {
@@ -63,6 +61,14 @@ export async function handleAction(
     return json(200, { ok: true, exp: auth.exp })
   }
 
+  const userEmail = (request.headers.get('Cf-Access-Authenticated-User-Email') ?? '').trim()
+  const isWrite = action === 'create_transaction'
+    || action === 'settle'
+    || action === 'reverse_transaction'
+  if (isWrite && userEmail === '') {
+    return json(401, { ok: false, error: 'unauthorized' })
+  }
+
   let payload: Record<string, unknown>
   let nonce: string
 
@@ -89,6 +95,7 @@ export async function handleAction(
     payload = {
       action: 'create_transaction',
       idempotencyKey: body.idempotencyKey,
+      userEmail,
       transaction: validated.transaction,
     }
   } else if (action === 'settle') {
@@ -114,6 +121,7 @@ export async function handleAction(
     payload = {
       action: 'settle',
       idempotencyKey: body.idempotencyKey,
+      userEmail,
       ...validated.settlement,
     }
   } else if (action === 'reverse_transaction') {
@@ -139,6 +147,7 @@ export async function handleAction(
     payload = {
       action: 'reverse_transaction',
       idempotencyKey: body.idempotencyKey,
+      userEmail,
       ...validated.reversal,
     }
   } else if (action === 'list_transactions') {
@@ -162,31 +171,6 @@ export async function handleAction(
       action: 'list_transactions',
       date_from: validated.date_from,
       date_to: validated.date_to,
-    }
-  } else if (action === 'check_consistency') {
-    let body: Record<string, unknown> = {}
-    try {
-      const parsed = await request.json()
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        body = parsed as Record<string, unknown>
-      } else {
-        return json(400, { ok: false, error: 'invalid request body' })
-      }
-    } catch {
-      return json(400, { ok: false, error: 'invalid request body' })
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(body, 'repair')
-      && typeof body.repair !== 'boolean'
-    ) {
-      return json(400, { ok: false, error: 'invalid repair flag' })
-    }
-
-    nonce = crypto.randomUUID()
-    payload = { action: 'check_consistency' }
-    if (body.repair === true) {
-      payload.repair = true
     }
   } else {
     nonce = crypto.randomUUID()

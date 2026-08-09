@@ -1,39 +1,56 @@
 import { describe, expect, it } from 'vitest'
 import {
   isValidUuid,
+  validateReversal,
+  validateSettlement,
   validateTransaction,
   validateTransactionDateRange,
 } from '../functions/lib/validate'
-import * as ValidateModule from '../functions/lib/validate'
 
 const valid = {
-  type: '支出',
-  amount: 260,
-  date: '2026-07-26',
-  time: '18:30',
-  description: '晚餐',
-  account: '現金',
+  date: '2026-08-09',
+  amount: 300,
+  payer: '小語',
+  split: '均分',
   category: '餐飲',
-  payee: '小吃店',
-  currency: 'TWD',
+  payee: '全聯',
 } as const
 
 describe('validateTransaction', () => {
-  it.each(['支出', '收入', '轉帳'] as const)('accepts the structural type %s', type => {
-    const result = validateTransaction({ ...valid, type })
-
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.transaction.type).toBe(type)
-  })
-
-  it('rejects a type outside the closed enum with a named error', () => {
-    expect(validateTransaction({ ...valid, type: '沖銷' })).toEqual({
-      ok: false,
-      error: 'invalid type',
+  it('accepts the full flat transaction', () => {
+    expect(validateTransaction(valid)).toEqual({
+      ok: true,
+      transaction: valid,
     })
   })
 
-  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, '260'])(
+  it('accepts an omitted payee', () => {
+    const { payee: _payee, ...withoutPayee } = valid
+
+    expect(validateTransaction(withoutPayee)).toEqual({
+      ok: true,
+      transaction: withoutPayee,
+    })
+  })
+
+  it.each(['均分', '全額對方', '全額自己'] as const)(
+    'accepts the split %s',
+    split => {
+      expect(validateTransaction({ ...valid, split })).toEqual({
+        ok: true,
+        transaction: { ...valid, split },
+      })
+    },
+  )
+
+  it('rejects a split outside the closed enum', () => {
+    expect(validateTransaction({ ...valid, split: '三七分' })).toEqual({
+      ok: false,
+      error: 'invalid split',
+    })
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, '300'])(
     'rejects invalid amount %s',
     amount => {
       expect(validateTransaction({ ...valid, amount })).toEqual({
@@ -43,19 +60,8 @@ describe('validateTransaction', () => {
     },
   )
 
-  it('accepts a well-formed real calendar date', () => {
-    expect(validateTransaction({ ...valid, date: '2024-02-29' }).ok).toBe(true)
-  })
-
-  it('rejects a malformed date', () => {
-    expect(validateTransaction({ ...valid, date: '2026/07/26' })).toEqual({
-      ok: false,
-      error: 'invalid date',
-    })
-  })
-
-  it.each(['2026-02-30', '2026-13-01'])(
-    'rejects the impossible calendar date %s',
+  it.each(['2026/08/09', '2026-02-30', '2026-13-01'])(
+    'rejects invalid date %s',
     date => {
       expect(validateTransaction({ ...valid, date })).toEqual({
         ok: false,
@@ -64,77 +70,51 @@ describe('validateTransaction', () => {
     },
   )
 
-  it('accepts a valid time', () => {
-    expect(validateTransaction({ ...valid, time: '23:59' }).ok).toBe(true)
+  it('accepts leap day 2024-02-29', () => {
+    expect(validateTransaction({ ...valid, date: '2024-02-29' }).ok).toBe(true)
   })
 
-  it('accepts an absent time', () => {
-    const { time: _time, ...withoutTime } = valid
-    const result = validateTransaction(withoutTime)
-
-    expect(result.ok).toBe(true)
-    if (result.ok) expect(result.transaction).not.toHaveProperty('time')
-  })
-
-  it.each(['25:00', '12:60'])('rejects the impossible time %s', time => {
-    expect(validateTransaction({ ...valid, time })).toEqual({
+  it('rejects a blank payer', () => {
+    expect(validateTransaction({ ...valid, payer: ' ' })).toEqual({
       ok: false,
-      error: 'invalid time',
+      error: 'invalid payer',
     })
   })
 
-  it.each(['', '   '])('rejects empty description %j', description => {
-    expect(validateTransaction({ ...valid, description })).toEqual({
+  it('rejects a missing payer', () => {
+    const { payer: _payer, ...withoutPayer } = valid
+
+    expect(validateTransaction(withoutPayer)).toEqual({
       ok: false,
-      error: 'missing description',
+      error: 'invalid payer',
     })
   })
 
-  it.each(['應收', '應付'] as const)('accepts the structural iou value %s', iou => {
-    expect(validateTransaction({ ...valid, iou }).ok).toBe(true)
-  })
-
-  it.each(['應收', '應付'] as const)(
-    'rejects iou %s when counterparty wire field is missing',
-    iou => {
-      const { payee: _wirePayee, ...withoutCounterparty } = valid
-
-      expect(validateTransaction({ ...withoutCounterparty, iou })).toEqual({
-        ok: false,
-        error: 'missing payee',
-      })
-    },
-  )
-
-  it('rejects an iou value outside the closed enum', () => {
-    expect(validateTransaction({ ...valid, iou: '已收' })).toEqual({
+  it('rejects a blank category', () => {
+    expect(validateTransaction({ ...valid, category: '' })).toEqual({
       ok: false,
-      error: 'invalid iou',
+      error: 'invalid category',
     })
   })
 
-  it.each(['account', 'toAccount', 'category', 'payee', 'currency'] as const)(
-    'rejects an empty optional string for %s',
-    field => {
-      expect(validateTransaction({ ...valid, [field]: '   ' })).toEqual({
-        ok: false,
-        error: `invalid ${field}`,
-      })
-    },
-  )
+  it('rejects a present but blank payee', () => {
+    expect(validateTransaction({ ...valid, payee: ' ' })).toEqual({
+      ok: false,
+      error: 'invalid payee',
+    })
+  })
 
-  it('accepts invented vocabulary values because vocabulary belongs to Code.gs', () => {
-    const transaction = {
-      ...valid,
-      account: '巷口郵局',
-      category: '天外飛來一筆',
-      payee: '月球雜貨店',
-      currency: '銀河幣',
-    }
-
-    expect(validateTransaction(transaction)).toEqual({
+  it('drops unknown fields', () => {
+    expect(validateTransaction({ ...valid, userEmail: 'spoof@example.com' })).toEqual({
       ok: true,
-      transaction,
+      transaction: valid,
+    })
+  })
+
+  it('rejects null input', () => {
+    expect(validateTransaction(null)).toEqual({
+      ok: false,
+      error: 'invalid transaction',
     })
   })
 })
@@ -149,42 +129,93 @@ describe('isValidUuid', () => {
   })
 })
 
+describe('validateSettlement', () => {
+  const settlement = {
+    date: '2026-08-09',
+    amount: 100,
+    payer: '阿哲',
+  } as const
+
+  it('accepts the flat settlement', () => {
+    expect(validateSettlement(settlement)).toEqual({
+      ok: true,
+      settlement,
+    })
+  })
+
+  it('requires amount', () => {
+    const { amount: _amount, ...withoutAmount } = settlement
+
+    expect(validateSettlement(withoutAmount)).toEqual({
+      ok: false,
+      error: 'invalid amount',
+    })
+  })
+
+  it.each([0, -0.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects invalid amount %s',
+    amount => {
+      expect(validateSettlement({ ...settlement, amount })).toEqual({
+        ok: false,
+        error: 'invalid amount',
+      })
+    },
+  )
+
+  it('rejects a blank payer', () => {
+    expect(validateSettlement({ ...settlement, payer: ' ' })).toEqual({
+      ok: false,
+      error: 'invalid payer',
+    })
+  })
+
+  it('rejects an impossible date', () => {
+    expect(validateSettlement({ ...settlement, date: '2026-02-30' })).toEqual({
+      ok: false,
+      error: 'invalid date',
+    })
+  })
+
+  it('drops unknown fields', () => {
+    expect(validateSettlement({ ...settlement, userEmail: 'spoof@example.com' })).toEqual({
+      ok: true,
+      settlement,
+    })
+  })
+})
+
 describe('validateReversal', () => {
   it('accepts only txn_id and a real calendar date', () => {
-    const validateReversal = (
-      ValidateModule as typeof ValidateModule & {
-        validateReversal?: (input: unknown) => unknown
-      }
-    ).validateReversal
-    expect(validateReversal).toBeTypeOf('function')
-    if (!validateReversal) return
-
     expect(validateReversal({
-      txn_id: 'original-1',
-      date: '2024-02-29',
+      txn_id: 'row-1',
+      date: '2026-08-09',
     })).toEqual({
       ok: true,
       reversal: {
-        txn_id: 'original-1',
-        date: '2024-02-29',
+        txn_id: 'row-1',
+        date: '2026-08-09',
       },
     })
   })
 
-  it.each([
-    [{ txn_id: '', date: '2026-07-27' }, 'invalid txn_id'],
-    [{ txn_id: 'original-1', date: '2026-02-30' }, 'invalid date'],
-    [{ txn_id: 'original-1', date: '2026-07-27', currency: 'TWD' }, 'currency is not accepted'],
-  ])('rejects an invalid reversal %#', (input, error) => {
-    const validateReversal = (
-      ValidateModule as typeof ValidateModule & {
-        validateReversal?: (input: unknown) => unknown
-      }
-    ).validateReversal
-    expect(validateReversal).toBeTypeOf('function')
-    if (!validateReversal) return
+  it('rejects a blank txn_id', () => {
+    expect(validateReversal({
+      txn_id: ' ',
+      date: '2026-08-09',
+    })).toEqual({
+      ok: false,
+      error: 'invalid txn_id',
+    })
+  })
 
-    expect(validateReversal(input)).toEqual({ ok: false, error })
+  it('rejects an impossible date', () => {
+    expect(validateReversal({
+      txn_id: 'row-1',
+      date: '2026-02-30',
+    })).toEqual({
+      ok: false,
+      error: 'invalid date',
+    })
   })
 })
 

@@ -1,7 +1,7 @@
 {
-  "name": "Solo Ledger 個人記帳",
+  "name": "Partner Ledger 夥伴記帳",
   "short_name": "記帳",
-  "description": "個人複式記帳快速輸入",
+  "description": "夥伴記帳快速輸入",
   "lang": "zh-Hant",
   "display": "standalone",
   "start_url": "/",

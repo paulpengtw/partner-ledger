@@ -3,27 +3,26 @@ import {
   OPTIONS_CACHE_KEY,
   listTransactions,
   loadOptions,
+  reverseTransaction,
+  settle,
   submitTransaction,
+  type LedgerTransaction,
+  type Transaction,
 } from '../src/api'
-import * as ApiModule from '../src/api'
-import {
-  CACHED_OPTIONS,
-  RECEIVABLE_GROUPS,
-  RECENT_TRANSACTIONS,
-  REFRESHED_OPTIONS,
-  WIRE_CACHED_OPTIONS,
-  WIRE_REFRESHED_OPTIONS,
-} from './pwa-fixtures'
 
 const KEY = '3b241101-e2bb-4255-8caf-4136c566a962'
-const TRANSACTION = {
-  type: '支出' as const,
-  amount: 260,
+const TRANSACTION: Transaction = {
   date: '2026-07-27',
-  description: '晚餐',
-  account: '錢包',
+  amount: 260,
+  payer: '小語',
+  split: '均分',
   category: '餐飲',
-  currency: 'TWD',
+  payee: '全聯',
+}
+const SETTLEMENT = {
+  date: '2026-07-27',
+  amount: 200,
+  payer: '阿哲',
 }
 
 const jsonResponse = (status: number, body: unknown): Response =>
@@ -44,12 +43,57 @@ function memoryStorage(): Storage {
   }
 }
 
+const CACHED_WIRE_OPTIONS = {
+  schema_version: 'schema-old',
+  categories: ['餐飲', '交通'],
+  payees: ['全聯', '小明'],
+  partners: ['阿哲', '小語'],
+}
+
+const REFRESHED_WIRE_OPTIONS = {
+  schema_version: 'schema-new',
+  categories: ['餐飲', '交通', '醫療'],
+  payees: ['全聯', '小明', '家樂福'],
+  partners: ['阿哲', '小語'],
+}
+
+const CACHED_OPTIONS = {
+  schema_version: 'schema-old',
+  categories: ['餐飲', '交通'],
+  counterparties: ['全聯', '小明'],
+  partners: ['阿哲', '小語'],
+}
+
+const REFRESHED_OPTIONS = {
+  schema_version: 'schema-new',
+  categories: ['餐飲', '交通', '醫療'],
+  counterparties: ['全聯', '小明', '家樂福'],
+  partners: ['阿哲', '小語'],
+}
+
+const LEDGER_TRANSACTION: LedgerTransaction = {
+  txn_id: 'txn-001',
+  日期: '2026-07-27',
+  金額: '260',
+  付款人: '小語',
+  分攤方式: '均分',
+  分類: '餐飲',
+  交易對象: '全聯',
+  記帳人: '小語',
+  來源: 'pwa',
+  沖銷txn_id: '',
+  voided: false,
+}
+
+const jsonFetch = (body: unknown, status = 200): typeof fetch =>
+  (async () => jsonResponse(status, body)) as typeof fetch
+
 afterEach(() => {
   vi.useRealTimers()
 })
 
 describe('submitTransaction', () => {
-  it('POSTs exactly the Pages Function contract accepted by validate.ts', async () => {
+  it('posts the flat transaction contract and maps success', async () => {
     const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       expect(String(url)).toBe('/api/create_transaction')
       expect(init?.method).toBe('POST')
@@ -57,12 +101,6 @@ describe('submitTransaction', () => {
         transaction: TRANSACTION,
         idempotencyKey: KEY,
       })
-      const body = JSON.parse(String(init?.body)) as {
-        transaction: Record<string, unknown>
-      }
-      expect(typeof body.transaction.amount).toBe('number')
-      expect(body.transaction.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-      expect(body.transaction).not.toHaveProperty('toAccount')
       return jsonResponse(200, { ok: true, txn_id: KEY })
     }) as unknown as typeof fetch
 
@@ -73,16 +111,32 @@ describe('submitTransaction', () => {
   })
 
   it('treats already:true as idempotent success', async () => {
-    const fetchFn = (async () =>
-      jsonResponse(200, { ok: true, already: true, txn_id: KEY })) as typeof fetch
-
-    await expect(submitTransaction(TRANSACTION, KEY, fetchFn)).resolves.toEqual({
+    await expect(
+      submitTransaction(TRANSACTION, KEY, jsonFetch({ ok: true, already: true })),
+    ).resolves.toEqual({
       ok: true,
       alreadyRecorded: true,
     })
   })
 
-  it('aborts a request after 15 seconds', async () => {
+  it.each([
+    ['401', () => jsonResponse(401, { ok: false, error: 'unauthorized' })],
+    ['opaqueredirect', () => ({
+      type: 'opaqueredirect',
+      status: 0,
+      ok: false,
+      json: async () => { throw new TypeError('opaque response has no body') },
+    }) as unknown as Response],
+  ])('classifies %s as an expired session', async (_label, response) => {
+    await expect(submitTransaction(TRANSACTION, KEY, (async () => response()) as typeof fetch))
+      .resolves.toEqual({
+        ok: false,
+        kind: 'auth',
+        message: '登入已過期',
+      })
+  })
+
+  it('classifies an aborted request as a timeout network error', async () => {
     vi.useFakeTimers()
     const fetchFn = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
@@ -100,91 +154,129 @@ describe('submitTransaction', () => {
       message: '連線逾時，請再試一次',
     })
   })
+
+  it('passes a backend error message through unchanged', async () => {
+    await expect(
+      submitTransaction(TRANSACTION, KEY, jsonFetch({ ok: false, error: '分類不存在' }, 400)),
+    ).resolves.toEqual({
+      ok: false,
+      kind: 'backend',
+      message: '分類不存在',
+    })
+  })
 })
 
-describe('expired-session classification', () => {
-  const opaqueRedirect = (): Response => ({
-    type: 'opaqueredirect',
-    status: 0,
-    ok: false,
-    json: async () => { throw new TypeError('opaque response has no body') },
-  }) as unknown as Response
-
-  it('sends every write in the programmatic shape Access answers with 401, never following redirects', async () => {
-    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-      const headers = init?.headers as Record<string, string>
-      expect(headers['x-requested-with']).toBe('XMLHttpRequest')
-      expect(init?.redirect).toBe('manual')
-      return jsonResponse(200, { ok: true, txn_id: KEY })
+describe('settle', () => {
+  it('posts the settlement contract and classifies success like submitTransaction', async () => {
+    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('/api/settle')
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({
+        ...SETTLEMENT,
+        idempotencyKey: KEY,
+      })
+      return jsonResponse(200, { ok: true })
     }) as unknown as typeof fetch
 
-    await expect(submitTransaction(TRANSACTION, KEY, fetchFn)).resolves.toEqual({
+    await expect(settle(SETTLEMENT, KEY, fetchFn)).resolves.toEqual({
       ok: true,
       alreadyRecorded: false,
     })
-    expect(fetchFn).toHaveBeenCalledTimes(1)
   })
 
-  it('classifies the unfollowed Access redirect on create_transaction as an expired session', async () => {
-    const fetchFn = (async () => opaqueRedirect()) as typeof fetch
+  it('classifies an expired session like submitTransaction', async () => {
+    const fetchFn = (async () => ({
+      type: 'opaqueredirect',
+      status: 0,
+      ok: false,
+      json: async () => { throw new TypeError('opaque response has no body') },
+    }) as unknown as Response) as typeof fetch
 
-    await expect(submitTransaction(TRANSACTION, KEY, fetchFn)).resolves.toEqual({
+    await expect(settle(SETTLEMENT, KEY, fetchFn)).resolves.toEqual({
       ok: false,
       kind: 'auth',
       message: '登入已過期',
     })
   })
+})
 
-  it('classifies the unfollowed Access redirect on settle as an expired session', async () => {
-    const fetchFn = (async () => opaqueRedirect()) as typeof fetch
+describe('reverseTransaction', () => {
+  it('posts the reversal contract and maps success', async () => {
+    const reversal = { txn_id: 'txn-001', date: '2026-07-27' }
+    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('/api/reverse_transaction')
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({
+        ...reversal,
+        idempotencyKey: KEY,
+      })
+      return jsonResponse(200, { ok: true })
+    }) as unknown as typeof fetch
 
-    await expect(ApiModule.settleReceivable({
-      txn_id: 'receivable-open-001',
-      account: '錢包',
-      date: '2026-07-27',
-      amount: 200,
-    }, KEY, fetchFn)).resolves.toEqual({
-      ok: false,
-      kind: 'auth',
-      message: '登入已過期',
+    await expect(reverseTransaction(reversal, KEY, fetchFn)).resolves.toEqual({
+      ok: true,
+      alreadyRecorded: false,
     })
   })
+})
 
-  it('classifies the unfollowed Access redirect on reverse_transaction as an expired session', async () => {
-    const fetchFn = (async () => opaqueRedirect()) as typeof fetch
+describe('listTransactions', () => {
+  it('posts the inclusive date range and parses transactions with payables', async () => {
+    const body = {
+      transactions: [LEDGER_TRANSACTION],
+      payables: {
+        directions: [
+          { debtor: '阿哲', creditor: '小語', outstanding: 130 },
+          { debtor: '小語', creditor: '阿哲', outstanding: 0 },
+        ],
+      },
+    }
+    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(url)).toBe('/api/list_transactions')
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(String(init?.body))).toEqual({
+        date_from: '0001-01-01',
+        date_to: '9999-12-31',
+      })
+      return jsonResponse(200, body)
+    }) as unknown as typeof fetch
 
-    await expect(ApiModule.reverseTransaction({
-      txn_id: 'txn-recent',
-      date: '2026-07-27',
-    }, KEY, fetchFn)).resolves.toEqual({
-      ok: false,
-      kind: 'auth',
-      message: '登入已過期',
-    })
+    await expect(
+      listTransactions('0001-01-01', '9999-12-31', fetchFn),
+    ).resolves.toEqual(body)
   })
 
-  it('keeps a genuine offline failure distinct: fetch rejection stays a network error', async () => {
-    const fetchFn = (async () => {
-      throw new TypeError('Failed to fetch')
-    }) as typeof fetch
+  it('returns null for the retired array response shape', async () => {
+    await expect(
+      listTransactions('2026-07-01', '2026-07-31', jsonFetch([LEDGER_TRANSACTION])),
+    ).resolves.toBeNull()
+  })
 
-    await expect(submitTransaction(TRANSACTION, KEY, fetchFn)).resolves.toEqual({
-      ok: false,
-      kind: 'network',
-      message: '沒有網路連線，請再試一次',
-    })
+  it('returns null when a payable outstanding value is non-finite', async () => {
+    await expect(
+      listTransactions(
+        '2026-07-01',
+        '2026-07-31',
+        jsonFetch({
+          transactions: [LEDGER_TRANSACTION],
+          payables: {
+            directions: [{ debtor: '阿哲', creditor: '小語', outstanding: Number.NaN }],
+          },
+        }),
+      ),
+    ).resolves.toBeNull()
   })
 })
 
 describe('loadOptions', () => {
-  it('returns localStorage cache synchronously then refreshes and updates it in the background', async () => {
+  it('serves cached options synchronously, refreshes, maps payees, and caches raw wire data', async () => {
     const storage = memoryStorage()
-    storage.setItem(OPTIONS_CACHE_KEY, JSON.stringify(WIRE_CACHED_OPTIONS))
+    storage.setItem(OPTIONS_CACHE_KEY, JSON.stringify(CACHED_WIRE_OPTIONS))
     const onRefresh = vi.fn()
-    const fetchFn = (async (url: RequestInfo | URL) => {
+    const fetchFn = vi.fn(async (url: RequestInfo | URL) => {
       expect(String(url)).toBe('/api/get_options')
-      return jsonResponse(200, WIRE_REFRESHED_OPTIONS)
-    }) as typeof fetch
+      return jsonResponse(200, REFRESHED_WIRE_OPTIONS)
+    }) as unknown as typeof fetch
 
     const loaded = loadOptions({ storage, fetchFn, onRefresh })
 
@@ -193,121 +285,23 @@ describe('loadOptions', () => {
 
     await expect(loaded.refresh).resolves.toEqual(REFRESHED_OPTIONS)
     expect(onRefresh).toHaveBeenCalledWith(REFRESHED_OPTIONS)
-    expect(JSON.parse(storage.getItem(OPTIONS_CACHE_KEY)!)).toEqual(WIRE_REFRESHED_OPTIONS)
-  })
-})
-
-describe('listTransactions', () => {
-  it('POSTs the inclusive date range and returns the exact string rows', async () => {
-    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('/api/list_transactions')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(String(init?.body))).toEqual({
-        date_from: '0001-01-01',
-        date_to: '9999-12-31',
-      })
-      return jsonResponse(200, RECENT_TRANSACTIONS)
-    }) as unknown as typeof fetch
-
-    await expect(
-      listTransactions('0001-01-01', '9999-12-31', fetchFn),
-    ).resolves.toEqual(RECENT_TRANSACTIONS)
-  })
-})
-
-describe('receivables API', () => {
-  it('POSTs list_receivables and accepts the grouped arithmetic response', async () => {
-    const listReceivables = (
-      ApiModule as typeof ApiModule & {
-        listReceivables?: (
-          fetchFn: typeof fetch,
-        ) => Promise<unknown>
-      }
-    ).listReceivables
-    expect(listReceivables).toBeTypeOf('function')
-    if (!listReceivables) return
-    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('/api/list_receivables')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(String(init?.body))).toEqual({})
-      return jsonResponse(200, RECEIVABLE_GROUPS)
-    }) as unknown as typeof fetch
-
-    await expect(listReceivables(fetchFn)).resolves.toEqual(RECEIVABLE_GROUPS)
+    expect(JSON.parse(storage.getItem(OPTIONS_CACHE_KEY)!)).toEqual(REFRESHED_WIRE_OPTIONS)
   })
 
-  it('POSTs settle without a currency field and maps success like other mutations', async () => {
-    const settleReceivable = (
-      ApiModule as typeof ApiModule & {
-        settleReceivable?: (
-          settlement: Record<string, unknown>,
-          idempotencyKey: string,
-          fetchFn: typeof fetch,
-        ) => Promise<unknown>
-      }
-    ).settleReceivable
-    expect(settleReceivable).toBeTypeOf('function')
-    if (!settleReceivable) return
-    const settlement = {
-      txn_id: 'receivable-open-001',
-      account: '錢包',
-      date: '2026-07-27',
-      amount: 200,
+  it('rejects a response whose partners are not exactly two strings without caching it', async () => {
+    const storage = memoryStorage()
+    const onRefresh = vi.fn()
+    const invalidOptions = {
+      ...REFRESHED_WIRE_OPTIONS,
+      partners: ['阿哲'],
     }
-    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('/api/settle')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(String(init?.body))).toEqual({
-        ...settlement,
-        idempotencyKey: KEY,
-      })
-      expect(JSON.parse(String(init?.body))).not.toHaveProperty('currency')
-      return jsonResponse(200, { ok: true, txn_id: KEY })
-    }) as unknown as typeof fetch
+    const fetchFn = jsonFetch(invalidOptions)
 
-    await expect(
-      settleReceivable(settlement, KEY, fetchFn),
-    ).resolves.toEqual({
-      ok: true,
-      alreadyRecorded: false,
-    })
-  })
-})
+    const loaded = loadOptions({ storage, fetchFn, onRefresh })
 
-describe('reverseTransaction', () => {
-  it('POSTs the reversal without a currency field and maps success like other mutations', async () => {
-    const reverseTransaction = (
-      ApiModule as typeof ApiModule & {
-        reverseTransaction?: (
-          reversal: Record<string, unknown>,
-          idempotencyKey: string,
-          fetchFn: typeof fetch,
-        ) => Promise<unknown>
-      }
-    ).reverseTransaction
-    expect(reverseTransaction).toBeTypeOf('function')
-    if (!reverseTransaction) return
-
-    const reversal = {
-      txn_id: 'txn-recent',
-      date: '2026-07-27',
-    }
-    const fetchFn = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(url)).toBe('/api/reverse_transaction')
-      expect(init?.method).toBe('POST')
-      expect(JSON.parse(String(init?.body))).toEqual({
-        ...reversal,
-        idempotencyKey: KEY,
-      })
-      expect(JSON.parse(String(init?.body))).not.toHaveProperty('currency')
-      return jsonResponse(200, { ok: true, txn_id: KEY })
-    }) as unknown as typeof fetch
-
-    await expect(
-      reverseTransaction(reversal, KEY, fetchFn),
-    ).resolves.toEqual({
-      ok: true,
-      alreadyRecorded: false,
-    })
+    expect(loaded.cached).toBeNull()
+    await expect(loaded.refresh).resolves.toBeNull()
+    expect(onRefresh).not.toHaveBeenCalled()
+    expect(storage.getItem(OPTIONS_CACHE_KEY)).toBeNull()
   })
 })

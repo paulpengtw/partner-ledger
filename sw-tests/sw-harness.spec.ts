@@ -90,7 +90,7 @@ test('the harness can assert CacheStorage contents after activation', async ({ p
     return { keys, paths: entries.map(entry => new URL(entry.url).pathname) }
   })
 
-  expect(stored.keys).toContain('solo-ledger-shell-v1')
+  expect(stored.keys).toContain('partner-ledger-shell-v1')
   expect(stored.paths).toContain('/')
 })
 
@@ -134,7 +134,7 @@ test('offline instrument: an authenticated client still opens the app with no ne
   await context.setOffline(true)
   await page.reload()
 
-  await expect(page).toHaveTitle('Solo Ledger')
+  await expect(page).toHaveTitle('Partner Ledger')
   // The stepped flow opens on the amount step; 記帳 lives in the 確認 step's
   // panel, display:none until that step activates — attached, never visible.
   await expect(page.getByRole('heading', { name: '金額多少？' })).toBeVisible()

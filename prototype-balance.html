@@ -1,0 +1,2117 @@
+<!-- PROTOTYPE — throwaway. Three variants of the partner-ledger balance view, switchable via ?variant=. Not production. -->
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#17342d" />
+    <title>夥伴分攤記帳 · Balance Prototype</title>
+    <link rel="stylesheet" href="/src/styles.css">
+    <style>
+      :root {
+        --prototype-ink: #17342d;
+        --prototype-muted: #64766f;
+        --prototype-accent: #a8ef76;
+        --prototype-accent-strong: #88d957;
+        --prototype-background: #f3f2ec;
+        --prototype-surface: #ffffff;
+        --prototype-line: #dfe5e1;
+        --prototype-warning: #fff3cb;
+        --prototype-warning-ink: #735300;
+        --prototype-green: #2e7d52;
+        --prototype-green-soft: #edf8ee;
+        --prototype-blue: #426c83;
+        --prototype-shadow: 0 10px 28px rgb(23 52 45 / 8%);
+      }
+
+      body {
+        background: var(--prototype-background);
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      #prototype-app {
+        min-height: 100dvh;
+        padding: calc(22px + env(safe-area-inset-top, 0px)) 16px
+          calc(152px + env(safe-area-inset-bottom, 0px));
+      }
+
+      #prototype-app *,
+      #prototype-app *::before,
+      #prototype-app *::after {
+        box-sizing: border-box;
+      }
+
+      .prototype-header {
+        display: grid;
+        gap: 10px;
+        margin: 0 2px 18px;
+      }
+
+      .prototype-eyebrow {
+        color: var(--prototype-muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+      }
+
+      .prototype-title-row,
+      .section-heading,
+      .card-heading,
+      .month-heading,
+      .statement-heading,
+      .settle-form-heading,
+      .sheet-heading,
+      .ledger-bar-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .prototype-title-row {
+        align-items: flex-start;
+      }
+
+      .prototype-title {
+        color: var(--prototype-ink);
+        font-size: clamp(30px, 8vw, 42px);
+        font-weight: 850;
+        letter-spacing: -0.06em;
+        line-height: 1;
+      }
+
+      .prototype-tag {
+        flex: none;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: var(--prototype-ink);
+        color: var(--prototype-accent);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .prototype-subtitle {
+        max-width: 40ch;
+        color: var(--prototype-muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .variant-panel,
+      .balance-cards,
+      .history-tape,
+      .direction-ledger,
+      .timeline-card {
+        display: grid;
+        gap: 14px;
+      }
+
+      .prototype-card,
+      .history-tape,
+      .direction-ledger,
+      .timeline-card {
+        padding: 16px;
+        border-radius: 24px;
+        background: var(--prototype-surface);
+        box-shadow: var(--prototype-shadow);
+      }
+
+      .section-heading {
+        min-height: 24px;
+      }
+
+      .section-heading h2,
+      .direction-ledger h2,
+      .timeline-card h2 {
+        color: var(--prototype-ink);
+        font-size: 17px;
+        font-weight: 850;
+        letter-spacing: -0.02em;
+      }
+
+      .section-heading h2 span,
+      .direction-ledger h2 span,
+      .timeline-card h2 span {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0;
+      }
+
+      .notice {
+        min-height: 20px;
+        margin: -5px 3px 0;
+        color: var(--prototype-ink);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .notice:empty {
+        min-height: 0;
+        margin: 0;
+      }
+
+      .balance-card {
+        position: relative;
+        display: grid;
+        gap: 14px;
+        min-height: 220px;
+        overflow: hidden;
+        padding: 20px;
+        border-radius: 26px;
+        background: var(--prototype-ink);
+        color: var(--prototype-surface);
+        box-shadow: 0 15px 32px rgb(23 52 45 / 18%);
+      }
+
+      .balance-card::after {
+        position: absolute;
+        right: -34px;
+        bottom: -50px;
+        width: 150px;
+        height: 150px;
+        border: 1px solid rgb(168 239 118 / 25%);
+        border-radius: 50%;
+        box-shadow: 0 0 0 18px rgb(168 239 118 / 5%),
+          0 0 0 36px rgb(168 239 118 / 4%);
+        content: '';
+        pointer-events: none;
+      }
+
+      .balance-card--yu {
+        background: #234b45;
+      }
+
+      .card-heading {
+        align-items: flex-start;
+      }
+
+      .card-kicker {
+        color: rgb(255 255 255 / 65%);
+        font-size: 12px;
+        font-weight: 750;
+        letter-spacing: 0.04em;
+      }
+
+      .card-direction {
+        margin-top: 5px;
+        color: #ffffff;
+        font-size: 21px;
+        font-weight: 850;
+        letter-spacing: -0.05em;
+      }
+
+      .direction-mark {
+        display: inline-grid;
+        min-width: 36px;
+        min-height: 36px;
+        place-items: center;
+        border-radius: 14px;
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .balance-number-wrap {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+
+      .balance-number {
+        color: var(--prototype-accent);
+        font-size: clamp(48px, 16vw, 76px);
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        letter-spacing: -0.09em;
+        line-height: 0.95;
+      }
+
+      .balance-unit {
+        color: rgb(255 255 255 / 66%);
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .balance-card-note {
+        color: rgb(255 255 255 / 66%);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .balance-card-actions {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: auto;
+      }
+
+      .settle-button,
+      .primary-action,
+      .sheet-submit {
+        min-height: 46px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 850;
+        transition: transform 140ms ease, background 140ms ease,
+          opacity 140ms ease;
+      }
+
+      .settle-button:active,
+      .primary-action:active,
+      .sheet-submit:active,
+      .secondary-action:active,
+      .settle-fab:active {
+        transform: scale(0.97);
+      }
+
+      .settle-button:disabled,
+      .primary-action:disabled,
+      .sheet-submit:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+
+      .card-zero-note {
+        color: rgb(255 255 255 / 68%);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .settle-inline {
+        position: relative;
+        z-index: 1;
+        margin: 0 -4px -4px;
+        padding: 12px;
+        border: 1px solid rgb(168 239 118 / 28%);
+        border-radius: 18px;
+        background: rgb(0 0 0 / 14%);
+      }
+
+      .settle-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .settle-form-heading strong {
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .balance-card .settle-form-heading strong,
+      .balance-card .settle-cancel,
+      .balance-card .settle-cap-note,
+      .balance-card .settle-label > span {
+        color: rgb(255 255 255 / 76%);
+      }
+
+      .settle-cancel,
+      .sheet-close,
+      .secondary-action {
+        min-height: 36px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .settle-cancel:hover,
+      .sheet-close:hover,
+      .secondary-action:hover {
+        background: rgb(23 52 45 / 7%);
+      }
+
+      .balance-card .settle-cancel:hover {
+        background: rgb(255 255 255 / 10%);
+      }
+
+      .settle-label {
+        display: grid;
+        gap: 6px;
+      }
+
+      .settle-label > span {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .settle-input {
+        width: 100%;
+        min-height: 48px;
+        padding: 0 13px;
+        border: 1px solid var(--prototype-line);
+        border-radius: 13px;
+        outline: 0;
+        background: var(--prototype-background);
+        color: var(--prototype-ink);
+        font-size: 22px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+      }
+
+      .balance-card .settle-input {
+        border-color: rgb(168 239 118 / 30%);
+        background: rgb(255 255 255 / 10%);
+        color: var(--prototype-accent);
+      }
+
+      .settle-input:focus {
+        border-color: var(--prototype-accent-strong);
+        box-shadow: 0 0 0 3px rgb(136 217 87 / 20%);
+      }
+
+      .settle-input::-webkit-inner-spin-button,
+      .settle-input::-webkit-outer-spin-button {
+        margin: 0;
+        -webkit-appearance: none;
+      }
+
+      .settle-input[type='number'] {
+        -moz-appearance: textfield;
+      }
+
+      .settle-cap-note {
+        color: var(--prototype-muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+
+      .settle-form .primary-action {
+        width: 100%;
+      }
+
+      .balance-card .primary-action {
+        background: var(--prototype-accent);
+      }
+
+      .history-tape {
+        margin-top: 2px;
+      }
+
+      .history-list {
+        display: grid;
+        gap: 9px;
+      }
+
+      .history-row {
+        display: grid;
+        gap: 9px;
+        padding: 14px;
+        border: 1px solid transparent;
+        border-radius: 17px;
+        background: var(--prototype-background);
+      }
+
+      .history-row--settlement {
+        border-color: #b7dcb9;
+        background: var(--prototype-green-soft);
+      }
+
+      .history-row.is-voided {
+        opacity: 0.52;
+      }
+
+      .history-row.is-voided .history-category,
+      .history-row.is-voided .history-amount {
+        text-decoration: line-through;
+      }
+
+      .history-main,
+      .history-sub,
+      .history-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .history-main {
+        align-items: flex-start;
+      }
+
+      .history-category {
+        color: var(--prototype-ink);
+        font-size: 15px;
+        font-weight: 850;
+      }
+
+      .history-counterparty,
+      .history-date,
+      .history-payer,
+      .history-split,
+      .timeline-date {
+        color: var(--prototype-muted);
+        font-size: 12px;
+      }
+
+      .history-amount {
+        color: var(--prototype-ink);
+        font-size: 18px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .history-row--settlement .history-amount {
+        color: var(--prototype-green);
+      }
+
+      .history-sub {
+        flex-wrap: wrap;
+        padding-top: 8px;
+        border-top: 1px solid #e4eae4;
+      }
+
+      .history-row--settlement .history-sub {
+        border-top-color: #cfe6d0;
+      }
+
+      .direction-badge,
+      .effect-chip,
+      .void-badge,
+      .settlement-badge,
+      .month-subtotal {
+        display: inline-flex;
+        min-height: 24px;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .direction-badge {
+        background: #e2eee8;
+        color: var(--prototype-ink);
+      }
+
+      .effect-chip {
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .history-row--settlement .effect-chip,
+      .settlement-badge {
+        background: #cceacc;
+        color: var(--prototype-green);
+      }
+
+      .void-badge {
+        background: #e4e4df;
+        color: #62645d;
+      }
+
+      .history-meta {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        color: var(--prototype-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .history-effect-note {
+        color: var(--prototype-ink);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .segment-control {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 5px;
+        padding: 5px;
+        border-radius: 17px;
+        background: #e1e8e1;
+      }
+
+      .segment-control button {
+        min-height: 48px;
+        padding: 8px 6px;
+        border: 0;
+        border-radius: 13px;
+        background: transparent;
+        color: var(--prototype-muted);
+        font-size: 13px;
+        font-weight: 850;
+        transition: background 140ms ease, color 140ms ease,
+          transform 140ms ease;
+      }
+
+      .segment-control button.selected {
+        background: var(--prototype-surface);
+        color: var(--prototype-ink);
+        box-shadow: 0 3px 10px rgb(23 52 45 / 8%);
+      }
+
+      .segment-control button:active {
+        transform: scale(0.98);
+      }
+
+      .direction-summary {
+        display: grid;
+        gap: 5px;
+        padding: 18px;
+        border-radius: 22px;
+        background: var(--prototype-ink);
+      }
+
+      .direction-summary-label {
+        color: rgb(255 255 255 / 68%);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .direction-summary-value {
+        color: var(--prototype-accent);
+        font-size: clamp(48px, 15vw, 74px);
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        letter-spacing: -0.09em;
+        line-height: 0.95;
+      }
+
+      .direction-summary-note {
+        color: rgb(255 255 255 / 66%);
+        font-size: 12px;
+      }
+
+      .statement-heading {
+        align-items: flex-end;
+      }
+
+      .statement-heading p {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        line-height: 1.4;
+        text-align: right;
+      }
+
+      .statement-list {
+        display: grid;
+        gap: 0;
+        border-top: 1px solid var(--prototype-line);
+      }
+
+      .statement-line {
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr) auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 70px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--prototype-line);
+      }
+
+      .statement-date {
+        color: var(--prototype-muted);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .statement-copy {
+        min-width: 0;
+      }
+
+      .statement-copy strong {
+        display: block;
+        overflow: hidden;
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .statement-copy span {
+        display: block;
+        overflow: hidden;
+        margin-top: 3px;
+        color: var(--prototype-muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .statement-amount {
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .statement-amount--plus {
+        color: var(--prototype-ink);
+      }
+
+      .statement-amount--minus {
+        color: var(--prototype-green);
+      }
+
+      .statement-running {
+        min-width: 64px;
+        color: var(--prototype-ink);
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .statement-settlement .statement-copy strong,
+      .statement-settlement .statement-running {
+        color: var(--prototype-green);
+      }
+
+      .empty-statement {
+        padding: 22px 4px 8px;
+        color: var(--prototype-muted);
+        font-size: 13px;
+        text-align: center;
+      }
+
+      .ledger-settle-bar {
+        position: fixed;
+        right: 12px;
+        bottom: calc(77px + env(safe-area-inset-bottom, 0px));
+        left: 12px;
+        z-index: 12;
+        display: grid;
+        gap: 10px;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 10px;
+        border: 1px solid #cbd8cd;
+        border-radius: 19px;
+        background: rgb(255 255 255 / 96%);
+        box-shadow: 0 12px 28px rgb(23 52 45 / 15%);
+        backdrop-filter: blur(12px);
+      }
+
+      .ledger-bar-row {
+        min-height: 40px;
+      }
+
+      .ledger-bar-copy {
+        min-width: 0;
+      }
+
+      .ledger-bar-copy strong {
+        display: block;
+        overflow: hidden;
+        color: var(--prototype-ink);
+        font-size: 13px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .ledger-bar-copy span {
+        display: block;
+        margin-top: 2px;
+        color: var(--prototype-muted);
+        font-size: 11px;
+      }
+
+      .ledger-bar-row .settle-button {
+        flex: none;
+        min-height: 40px;
+        padding: 0 12px;
+        font-size: 12px;
+      }
+
+      .settle-form--bar {
+        padding-top: 8px;
+        border-top: 1px solid var(--prototype-line);
+      }
+
+      .summary-strip {
+        position: sticky;
+        top: 0;
+        z-index: 9;
+        display: grid;
+        gap: 8px;
+        margin: calc(-22px - env(safe-area-inset-top, 0px)) -16px 16px;
+        padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+        border-bottom: 1px solid rgb(223 229 225 / 80%);
+        background: rgb(243 242 236 / 92%);
+        backdrop-filter: blur(12px);
+      }
+
+      .summary-strip-label {
+        color: var(--prototype-muted);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+      }
+
+      .summary-pills {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 7px;
+      }
+
+      .summary-pill {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--prototype-line);
+        border-radius: 13px;
+        background: var(--prototype-surface);
+      }
+
+      .summary-pill span {
+        overflow: hidden;
+        color: var(--prototype-muted);
+        font-size: 10px;
+        font-weight: 750;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .summary-pill strong {
+        overflow: hidden;
+        color: var(--prototype-ink);
+        font-size: 19px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        letter-spacing: -0.04em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .timeline-card {
+        gap: 0;
+        padding-bottom: 10px;
+      }
+
+      .timeline-card > .section-heading {
+        margin-bottom: 10px;
+      }
+
+      .timeline-month {
+        display: grid;
+        gap: 12px;
+        padding: 15px 0 17px;
+        border-top: 1px solid var(--prototype-line);
+      }
+
+      .timeline-month:first-of-type {
+        border-top: 0;
+      }
+
+      .month-heading {
+        align-items: flex-start;
+      }
+
+      .month-heading h3 {
+        color: var(--prototype-ink);
+        font-size: 18px;
+        font-weight: 850;
+        letter-spacing: -0.04em;
+      }
+
+      .month-heading > span {
+        color: var(--prototype-muted);
+        font-size: 12px;
+      }
+
+      .month-subtotals {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .month-subtotal {
+        display: grid;
+        gap: 2px;
+        min-height: auto;
+        align-items: start;
+        padding: 7px 9px;
+        border-radius: 12px;
+        background: #edf1ec;
+        color: var(--prototype-muted);
+        font-size: 10px;
+        line-height: 1.25;
+        white-space: normal;
+      }
+
+      .month-subtotal strong {
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .timeline-list {
+        position: relative;
+        display: grid;
+        gap: 0;
+      }
+
+      .timeline-list::before {
+        position: absolute;
+        top: 10px;
+        bottom: 12px;
+        left: 7px;
+        width: 2px;
+        background: #d8e4d9;
+        content: '';
+      }
+
+      .timeline-row {
+        position: relative;
+        display: grid;
+        grid-template-columns: 16px minmax(0, 1fr);
+        gap: 11px;
+        padding: 6px 0 12px;
+      }
+
+      .timeline-rail {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: center;
+        padding-top: 7px;
+      }
+
+      .timeline-dot {
+        width: 10px;
+        height: 10px;
+        border: 3px solid var(--prototype-background);
+        border-radius: 50%;
+        background: var(--prototype-ink);
+        box-shadow: 0 0 0 1px #b9cdbb;
+      }
+
+      .timeline-row--settlement .timeline-dot {
+        background: var(--prototype-green);
+      }
+
+      .timeline-content {
+        min-width: 0;
+        padding: 11px 12px;
+        border: 1px solid transparent;
+        border-radius: 15px;
+        background: var(--prototype-background);
+      }
+
+      .timeline-row--settlement .timeline-content {
+        border-color: #b7dcb9;
+        background: var(--prototype-green-soft);
+      }
+
+      .timeline-row.is-voided {
+        opacity: 0.52;
+      }
+
+      .timeline-row.is-voided .timeline-title,
+      .timeline-row.is-voided .timeline-amount {
+        text-decoration: line-through;
+      }
+
+      .timeline-row-top,
+      .timeline-row-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .timeline-title {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 850;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .timeline-amount {
+        flex: none;
+        color: var(--prototype-ink);
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+      }
+
+      .timeline-row--settlement .timeline-title,
+      .timeline-row--settlement .timeline-amount {
+        color: var(--prototype-green);
+      }
+
+      .timeline-row-meta {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        margin-top: 7px;
+      }
+
+      .timeline-effect {
+        margin-top: 8px;
+        color: var(--prototype-ink);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .timeline-row--settlement .timeline-effect {
+        color: var(--prototype-green);
+      }
+
+      .settle-fab {
+        position: fixed;
+        right: 16px;
+        bottom: calc(81px + env(safe-area-inset-bottom, 0px));
+        z-index: 15;
+        display: grid;
+        min-width: 64px;
+        min-height: 58px;
+        place-items: center;
+        gap: 1px;
+        padding: 8px 12px;
+        border: 0;
+        border-radius: 20px;
+        background: var(--prototype-ink);
+        color: var(--prototype-accent);
+        box-shadow: 0 12px 24px rgb(23 52 45 / 24%);
+        transition: transform 140ms ease;
+      }
+
+      .settle-fab strong {
+        font-size: 14px;
+        font-weight: 850;
+      }
+
+      .settle-fab span {
+        color: rgb(255 255 255 / 68%);
+        font-size: 11px;
+      }
+
+      .sheet-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        align-items: end;
+        background: rgb(9 11 10 / 46%);
+      }
+
+      .sheet-backdrop {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+
+      .bottom-sheet {
+        position: relative;
+        display: grid;
+        gap: 16px;
+        max-height: calc(100dvh - 42px);
+        overflow: auto;
+        padding: 18px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+        border-radius: 25px 25px 0 0;
+        background: var(--prototype-surface);
+        box-shadow: 0 -12px 28px rgb(23 52 45 / 18%);
+      }
+
+      .sheet-heading {
+        align-items: flex-start;
+      }
+
+      .sheet-heading h2 {
+        color: var(--prototype-ink);
+        font-size: 23px;
+        font-weight: 850;
+        letter-spacing: -0.05em;
+      }
+
+      .sheet-heading p {
+        margin-top: 4px;
+        color: var(--prototype-muted);
+        font-size: 12px;
+      }
+
+      .direction-radio-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .direction-radio-card {
+        position: relative;
+        display: grid;
+        gap: 3px;
+        padding: 13px 14px 13px 42px;
+        border: 1px solid var(--prototype-line);
+        border-radius: 16px;
+        background: var(--prototype-background);
+        color: var(--prototype-ink);
+        cursor: pointer;
+      }
+
+      .direction-radio-card::before {
+        position: absolute;
+        top: 50%;
+        left: 15px;
+        width: 18px;
+        height: 18px;
+        border: 2px solid #b8c9bb;
+        border-radius: 50%;
+        content: '';
+        transform: translateY(-50%);
+      }
+
+      .direction-radio-card.selected {
+        border-color: var(--prototype-accent-strong);
+        background: #f1fbe9;
+      }
+
+      .direction-radio-card.selected::after {
+        position: absolute;
+        top: 50%;
+        left: 20px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--prototype-ink);
+        content: '';
+        transform: translateY(-50%);
+      }
+
+      .direction-radio-card input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+
+      .direction-radio-card strong {
+        font-size: 15px;
+        font-weight: 850;
+      }
+
+      .direction-radio-card span {
+        color: var(--prototype-muted);
+        font-size: 12px;
+      }
+
+      .settle-form--sheet {
+        padding-top: 14px;
+        border-top: 1px solid var(--prototype-line);
+      }
+
+      .settle-form--sheet .sheet-submit {
+        width: 100%;
+      }
+
+      .variant-switcher {
+        position: fixed;
+        bottom: calc(13px + env(safe-area-inset-bottom, 0px));
+        left: 50%;
+        z-index: 20;
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        align-items: center;
+        width: min(92vw, 390px);
+        min-height: 54px;
+        padding: 5px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: #090b0a;
+        color: #ffffff;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
+      }
+
+      .variant-switcher button {
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .variant-switcher button:hover {
+        background: rgb(255 255 255 / 15%);
+      }
+
+      .variant-switcher-label {
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 800;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .variant-switcher button:focus-visible,
+      .settle-button:focus-visible,
+      .primary-action:focus-visible,
+      .secondary-action:focus-visible,
+      .segment-control button:focus-visible,
+      .settle-fab:focus-visible,
+      .sheet-close:focus-visible,
+      .direction-radio-card:has(input:focus-visible) {
+        outline: 3px solid rgb(136 217 87 / 42%);
+        outline-offset: 2px;
+      }
+
+      @media (min-width: 420px) {
+        #prototype-app {
+          padding-right: 22px;
+          padding-left: 22px;
+        }
+
+        .summary-strip {
+          margin-right: -22px;
+          margin-left: -22px;
+          padding-right: 22px;
+          padding-left: 22px;
+        }
+      }
+
+      @media (min-width: 620px) {
+        #prototype-app {
+          max-width: 720px;
+          margin: 0 auto;
+        }
+
+        .summary-strip {
+          margin-right: -22px;
+          margin-left: -22px;
+        }
+
+        .direction-radio-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 350px) {
+        .summary-pills,
+        .month-subtotals {
+          grid-template-columns: 1fr;
+        }
+
+        .segment-control button {
+          font-size: 12px;
+        }
+
+        .statement-line {
+          grid-template-columns: 48px minmax(0, 1fr) auto;
+          gap: 6px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #prototype-app *,
+        #prototype-app *::before,
+        #prototype-app *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="prototype-app"></div>
+    <script type="module">
+      const partners = ['阿哲', '小語'];
+      const directionOrder = ['zhe-to-yu', 'yu-to-zhe'];
+      const directions = {
+        'zhe-to-yu': {
+          key: 'zhe-to-yu',
+          debtor: '阿哲',
+          creditor: '小語',
+          label: '阿哲應付小語',
+          arrow: '阿哲 → 小語',
+          short: '阿哲→小語',
+        },
+        'yu-to-zhe': {
+          key: 'yu-to-zhe',
+          debtor: '小語',
+          creditor: '阿哲',
+          label: '小語應付阿哲',
+          arrow: '小語 → 阿哲',
+          short: '小語→阿哲',
+        },
+      };
+      const splitLabels = {
+        equal: '均分',
+        other: '全額對方',
+        self: '全額自己',
+      };
+      const variantLabels = {
+        A: 'A — 雙卡總覽',
+        B: 'B — 分向對帳',
+        C: 'C — 時間軸為主',
+      };
+      const variantNotes = {
+        A: '先看兩筆各自應付多少，再從卡片直接結清。',
+        B: '一次只看一個方向，每一列都攤開為什麼會欠到這個數字。',
+        C: '讓完整時間軸成為主畫面，兩筆應付只在頂端安靜提示。',
+      };
+      const variantOrder = ['A', 'B', 'C'];
+      const root = document.getElementById('prototype-app');
+      const devHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      let activeVariant = readVariantFromUrl();
+      let selectedDirection = 'zhe-to-yu';
+      let settleState = null;
+      let notice = '';
+      let nextSequence = 15;
+
+      // Money is stored as integer cents so odd-dollar equal splits render as 62.5 without floats.
+      let ledgerRows = [
+        {
+          id: 'expense-01',
+          type: 'expense',
+          date: '2026-07-03',
+          amount: '420',
+          payer: '阿哲',
+          split: 'equal',
+          category: '餐飲',
+          counterparty: '小巷麵店',
+          voided: false,
+          sequence: 1,
+        },
+        {
+          id: 'expense-02',
+          type: 'expense',
+          date: '2026-07-06',
+          amount: '125',
+          payer: '小語',
+          split: 'equal',
+          category: '餐飲',
+          counterparty: '河岸咖啡',
+          voided: false,
+          sequence: 2,
+        },
+        {
+          id: 'expense-03',
+          type: 'expense',
+          date: '2026-07-10',
+          amount: '680',
+          payer: '小語',
+          split: 'other',
+          category: '交通',
+          counterparty: '高鐵票',
+          voided: false,
+          sequence: 3,
+        },
+        {
+          id: 'expense-04',
+          type: 'expense',
+          date: '2026-07-14',
+          amount: '300',
+          payer: '阿哲',
+          split: 'self',
+          category: '日用品',
+          counterparty: '洗衣用品',
+          voided: false,
+          sequence: 4,
+        },
+        {
+          id: 'expense-05',
+          type: 'expense',
+          date: '2026-07-19',
+          amount: '540',
+          payer: '阿哲',
+          split: 'equal',
+          category: '娛樂',
+          counterparty: '電影票',
+          voided: false,
+          sequence: 5,
+        },
+        {
+          id: 'expense-06',
+          type: 'expense',
+          date: '2026-07-24',
+          amount: '260',
+          payer: '小語',
+          split: 'self',
+          category: '帳單',
+          counterparty: '手機費',
+          voided: false,
+          sequence: 6,
+        },
+        {
+          id: 'expense-07',
+          type: 'expense',
+          date: '2026-07-29',
+          amount: '900',
+          payer: '小語',
+          split: 'equal',
+          category: '餐飲',
+          counterparty: '火鍋店',
+          voided: false,
+          sequence: 7,
+        },
+        {
+          id: 'expense-08',
+          type: 'expense',
+          date: '2026-07-31',
+          amount: '150',
+          payer: '阿哲',
+          split: 'other',
+          category: '其他',
+          counterparty: '代購小物',
+          voided: false,
+          sequence: 8,
+        },
+        {
+          id: 'expense-09',
+          type: 'expense',
+          date: '2026-08-02',
+          amount: '510',
+          payer: '阿哲',
+          split: 'equal',
+          category: '交通',
+          counterparty: '計程車',
+          voided: false,
+          sequence: 9,
+        },
+        {
+          id: 'expense-10',
+          type: 'expense',
+          date: '2026-08-03',
+          amount: '200',
+          payer: '小語',
+          split: 'other',
+          category: '日用品',
+          counterparty: '收納盒',
+          voided: true,
+          sequence: 10,
+        },
+        {
+          id: 'expense-11',
+          type: 'expense',
+          date: '2026-08-04',
+          amount: '730',
+          payer: '阿哲',
+          split: 'equal',
+          category: '娛樂',
+          counterparty: '展覽門票',
+          voided: false,
+          sequence: 11,
+        },
+        {
+          id: 'expense-12',
+          type: 'expense',
+          date: '2026-08-05',
+          amount: '360',
+          payer: '小語',
+          split: 'equal',
+          category: '餐飲',
+          counterparty: '早餐店',
+          voided: false,
+          sequence: 12,
+        },
+        {
+          id: 'expense-13',
+          type: 'expense',
+          date: '2026-08-07',
+          amount: '1250',
+          payer: '小語',
+          split: 'other',
+          category: '帳單',
+          counterparty: '住宿訂金',
+          voided: false,
+          sequence: 13,
+        },
+        {
+          id: 'settlement-01',
+          type: 'settlement',
+          date: '2026-08-08',
+          amount: '500',
+          payer: '阿哲',
+          split: null,
+          category: '結清',
+          counterparty: '上次先結一部分',
+          voided: false,
+          sequence: 14,
+        },
+      ];
+
+      function parseMoney(value) {
+        const raw = String(value ?? '').trim().replace(/,/g, '');
+        if (!raw || !/^\d+(?:\.\d{0,2})?$/.test(raw)) {
+          return 0n;
+        }
+        const pieces = raw.split('.');
+        const whole = BigInt(pieces[0] || '0');
+        const fraction = (pieces[1] || '').padEnd(2, '0');
+        return whole * 100n + BigInt(fraction || '0');
+      }
+
+      function formatMoney(cents) {
+        const amount = BigInt(cents);
+        const sign = amount < 0n ? '−' : '';
+        const absolute = amount < 0n ? -amount : amount;
+        const whole = absolute / 100n;
+        const fraction = String(absolute % 100n).padStart(2, '0');
+        if (fraction === '00') {
+          return sign + String(whole);
+        }
+        return sign + String(whole) + '.' + fraction.replace(/0$/, '');
+      }
+
+      function formatSigned(cents) {
+        const amount = BigInt(cents);
+        if (amount > 0n) {
+          return '+' + formatMoney(amount);
+        }
+        if (amount < 0n) {
+          return '−' + formatMoney(-amount);
+        }
+        return '0';
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, function (character) {
+          return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+          }[character];
+        });
+      }
+
+      function readVariantFromUrl() {
+        const requested = new URLSearchParams(location.search).get('variant');
+        const value = requested ? requested.toUpperCase() : 'A';
+        return variantOrder.includes(value) ? value : 'A';
+      }
+
+      function today() {
+        const date = new Date();
+        const year = String(date.getFullYear()).padStart(4, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+      }
+
+      function otherPartner(partner) {
+        return partners.find(function (candidate) {
+          return candidate !== partner;
+        }) || '';
+      }
+
+      function directionFor(debtor, creditor) {
+        if (debtor === '阿哲' && creditor === '小語') {
+          return 'zhe-to-yu';
+        }
+        if (debtor === '小語' && creditor === '阿哲') {
+          return 'yu-to-zhe';
+        }
+        return '';
+      }
+
+      function sharesForExpense(row) {
+        const amount = parseMoney(row.amount);
+        const otherName = otherPartner(row.payer);
+        if (row.split === 'other') {
+          return { payer: 0n, other: amount, otherName: otherName };
+        }
+        if (row.split === 'self') {
+          return { payer: amount, other: 0n, otherName: otherName };
+        }
+        const payerShare = amount / 2n;
+        return { payer: payerShare, other: amount - payerShare, otherName: otherName };
+      }
+
+      function rowEffect(row, direction) {
+        if (row.type === 'settlement') {
+          const settlementDirection = directionFor(row.payer, otherPartner(row.payer));
+          return settlementDirection === direction ? -parseMoney(row.amount) : 0n;
+        }
+        if (row.voided) {
+          return 0n;
+        }
+        const shares = sharesForExpense(row);
+        const expenseDirection = directionFor(shares.otherName, row.payer);
+        return expenseDirection === direction ? shares.other : 0n;
+      }
+
+      function calculateBalances() {
+        const balances = {
+          'zhe-to-yu': 0n,
+          'yu-to-zhe': 0n,
+        };
+        ledgerRows.forEach(function (row) {
+          directionOrder.forEach(function (direction) {
+            balances[direction] += rowEffect(row, direction);
+          });
+        });
+        return balances;
+      }
+
+      function outstanding(direction) {
+        const amount = calculateBalances()[direction];
+        return amount > 0n ? amount : 0n;
+      }
+
+      function sortedRows(newestFirst) {
+        return ledgerRows.slice().sort(function (left, right) {
+          const dateOrder = right.date.localeCompare(left.date);
+          if (dateOrder !== 0) {
+            return newestFirst ? dateOrder : -dateOrder;
+          }
+          const sequenceOrder = right.sequence - left.sequence;
+          return newestFirst ? sequenceOrder : -sequenceOrder;
+        });
+      }
+
+      function dateShort(date) {
+        return date.slice(5).replace('-', ' / ');
+      }
+
+      function monthLabel(month) {
+        return month.slice(0, 4) + ' 年 ' + month.slice(5) + ' 月';
+      }
+
+      function rowCategory(row) {
+        return row.counterparty
+          ? row.category + ' · ' + row.counterparty
+          : row.category;
+      }
+
+      function rowBeneficiary(row) {
+        if (row.type === 'settlement') {
+          return otherPartner(row.payer);
+        }
+        const shares = sharesForExpense(row);
+        return shares.other > 0n ? shares.otherName : '自己';
+      }
+
+      function rowRoute(row) {
+        return row.payer + ' → ' + rowBeneficiary(row);
+      }
+
+      function rowEffectText(row) {
+        if (row.voided) {
+          return '不計入兩筆應付';
+        }
+        if (row.type === 'settlement') {
+          return row.payer + '−' + formatMoney(parseMoney(row.amount));
+        }
+        const shares = sharesForExpense(row);
+        if (shares.other === 0n) {
+          return '無新增應付';
+        }
+        return shares.otherName + '+' + formatMoney(shares.other);
+      }
+
+      function rowClasses(row, prefix) {
+        const classes = [prefix + '-row'];
+        if (row.type === 'settlement') {
+          classes.push(prefix + '-row--settlement');
+        }
+        if (row.voided) {
+          classes.push('is-voided');
+        }
+        return classes.join(' ');
+      }
+
+      function renderHistoryRow(row) {
+        const settlement = row.type === 'settlement';
+        const amountText = settlement
+          ? '−' + formatMoney(parseMoney(row.amount))
+          : formatMoney(parseMoney(row.amount));
+        const badge = settlement
+          ? '<span class="settlement-badge">結清</span>'
+          : '<span class="direction-badge">' + escapeHtml(rowRoute(row)) + '</span>';
+        const voidBadge = row.voided
+          ? '<span class="void-badge">已沖銷</span>'
+          : '';
+        const split = settlement
+          ? '付款人：' + row.payer
+          : '付款人：' + row.payer + ' · ' + splitLabels[row.split];
+        return '<article class="' + rowClasses(row, 'history') + '">' +
+          '<div class="history-main"><div><strong class="history-category">' +
+          escapeHtml(row.category) + '</strong>' +
+          (row.counterparty
+            ? '<span class="history-counterparty"> · ' + escapeHtml(row.counterparty) + '</span>'
+            : '') +
+          '</div><strong class="history-amount">' + amountText + '</strong></div>' +
+          '<div class="history-sub"><span class="history-date">' + escapeHtml(dateShort(row.date)) +
+          '</span>' + badge + '<span class="effect-chip">' + escapeHtml(rowEffectText(row)) +
+          '</span>' + voidBadge + '</div>' +
+          '<div class="history-meta"><span class="history-payer">' + escapeHtml(split) +
+          '</span><span class="history-effect-note">' + (settlement ? '扣除這個方向的應付' : '分攤效果') +
+          '</span></div></article>';
+      }
+
+      function renderHistoryTape() {
+        return '<section class="history-tape" aria-labelledby="history-heading-a">' +
+          '<div class="section-heading"><h2 id="history-heading-a">全部紀錄 <span>最新在前</span></h2>' +
+          '<span class="card-kicker">不抵銷</span></div>' +
+          '<div class="history-list">' + sortedRows(true).map(renderHistoryRow).join('') +
+          '</div></section>';
+      }
+
+      function renderSettleForm(direction, extraClass) {
+        const cap = outstanding(direction);
+        const draft = settleState && settleState.direction === direction && settleState.amount !== ''
+          ? settleState.amount
+          : formatMoney(cap);
+        return '<form class="settle-form ' + escapeHtml(extraClass || '') + '" data-settle-form>' +
+          '<div class="settle-form-heading"><strong>輸入結清金額</strong>' +
+          '<button type="button" class="settle-cancel" data-action="cancel-settle">取消</button></div>' +
+          '<label class="settle-label"><span>這次付多少？</span><input class="settle-input" data-settle-amount type="number" min="0.5" step="0.5" inputmode="decimal" autocomplete="off" value="' +
+          escapeHtml(draft) + '" max="' + escapeHtml(formatMoney(cap)) + '" aria-label="結清金額" /></label>' +
+          '<span class="settle-cap-note">上限為目前「' + escapeHtml(directions[direction].label) + '」的 ' +
+          escapeHtml(formatMoney(cap)) + '，輸入超過會自動壓回上限。</span>' +
+          '<button type="submit" class="primary-action"' + (cap <= 0n ? ' disabled' : '') + '>確認加入結清</button>' +
+          '</form>';
+      }
+
+      function renderBalanceCard(direction) {
+        const info = directions[direction];
+        const balance = outstanding(direction);
+        const isOpen = settleState && settleState.surface === 'card' && settleState.direction === direction;
+        const action = isOpen
+          ? renderSettleForm(direction, 'settle-inline')
+          : '<div class="balance-card-actions"><span class="card-zero-note">' +
+            (balance > 0n ? '目前未結清的總額' : '這個方向已結清') +
+            '</span><button type="button" class="settle-button" data-action="open-settle" data-surface="card" data-direction="' +
+            direction + '"' + (balance <= 0n ? ' disabled' : '') + '>結清這筆</button></div>';
+        return '<article class="balance-card balance-card--' + (direction === 'zhe-to-yu' ? 'zhe' : 'yu') + '">' +
+          '<div class="card-heading"><div><div class="card-kicker">GROSS PAYABLE · 不與另一筆相抵</div>' +
+          '<h2 class="card-direction">' + escapeHtml(info.label) + '</h2></div><span class="direction-mark">' +
+          escapeHtml(direction === 'zhe-to-yu' ? 'A→小' : '小→A') + '</span></div>' +
+          '<div class="balance-number-wrap"><strong class="balance-number">' + formatMoney(balance) +
+          '</strong><span class="balance-unit">元</span></div>' +
+          '<p class="balance-card-note">只計入未沖銷的分攤，再扣掉這個方向的結清列。</p>' +
+          action + '</article>';
+      }
+
+      function renderVariantA() {
+        return '<section class="variant-panel variant-a" aria-labelledby="variant-a-heading">' +
+          '<div class="section-heading"><h2 id="variant-a-heading">兩筆各自算清 <span>先看餘額</span></h2>' +
+          '<span class="card-kicker">14 列</span></div>' +
+          '<div class="balance-cards">' + directionOrder.map(renderBalanceCard).join('') + '</div>' +
+          renderHistoryTape() + '</section>';
+      }
+
+      function getStatementLines(direction) {
+        return sortedRows(false).map(function (row) {
+          const effect = rowEffect(row, direction);
+          if (effect === 0n) {
+            return null;
+          }
+          if (row.type === 'settlement') {
+            return {
+              row: row,
+              effect: effect,
+              title: '結清',
+              detail: row.payer + ' 付款給 ' + otherPartner(row.payer),
+              settlement: true,
+            };
+          }
+          const shares = sharesForExpense(row);
+          return {
+            row: row,
+            effect: effect,
+            title: row.category,
+            detail: row.payer + '付款 · ' + splitLabels[row.split] +
+              (row.counterparty ? ' · ' + row.counterparty : '') +
+              ' · ' + shares.otherName + '份額',
+            settlement: false,
+          };
+        }).filter(Boolean);
+      }
+
+      function renderStatementLine(line, running) {
+        const positive = line.effect > 0n;
+        return '<article class="statement-line' + (line.settlement ? ' statement-settlement' : '') + '">' +
+          '<span class="statement-date">' + escapeHtml(dateShort(line.row.date)) + '</span>' +
+          '<div class="statement-copy"><strong>' + escapeHtml(line.title) + '</strong><span>' +
+          escapeHtml(line.detail) + '</span></div><span class="statement-amount ' +
+          (positive ? 'statement-amount--plus' : 'statement-amount--minus') + '">' +
+          formatSigned(line.effect) + '</span><strong class="statement-running">' +
+          formatMoney(running) + '</strong></article>';
+      }
+
+      function renderPinnedSettleBar(direction) {
+        const info = directions[direction];
+        const balance = outstanding(direction);
+        const isOpen = settleState && settleState.surface === 'bar';
+        return '<aside class="ledger-settle-bar" aria-label="固定結清操作"><div class="ledger-bar-row"><div class="ledger-bar-copy">' +
+          '<strong>' + escapeHtml(info.label) + '</strong><span>目前還有 ' + formatMoney(balance) + ' 元</span></div>' +
+          '<button type="button" class="settle-button" data-action="open-settle" data-surface="bar" data-direction="' +
+          direction + '"' + (balance <= 0n ? ' disabled' : '') + '>' +
+          (balance > 0n ? '結清' : '已清零') + '</button></div>' +
+          (isOpen ? renderSettleForm(direction, 'settle-form--bar') : '') + '</aside>';
+      }
+
+      function renderVariantB() {
+        const info = directions[selectedDirection];
+        const balance = outstanding(selectedDirection);
+        const lines = getStatementLines(selectedDirection);
+        let running = 0n;
+        const statementMarkup = lines.length
+          ? lines.map(function (line) {
+              running += line.effect;
+              return renderStatementLine(line, running);
+            }).join('')
+          : '<p class="empty-statement">這個方向目前沒有會計入的列。</p>';
+        return '<section class="variant-panel variant-b" aria-labelledby="variant-b-heading">' +
+          '<div class="section-heading"><h2 id="variant-b-heading">一次對一個方向 <span>逐列累加</span></h2>' +
+          '<span class="card-kicker">只看原因</span></div>' +
+          '<div class="segment-control" role="tablist" aria-label="選擇應付方向">' +
+          directionOrder.map(function (direction) {
+            return '<button type="button" role="tab" aria-selected="' + (direction === selectedDirection) +
+              '" class="' + (direction === selectedDirection ? 'selected' : '') + '" data-direction-tab="' +
+              direction + '">' + escapeHtml(directions[direction].short) + '</button>';
+          }).join('') + '</div>' +
+          '<section class="direction-ledger" aria-labelledby="selected-direction-heading"><div class="direction-summary">' +
+          '<span class="direction-summary-label">' + escapeHtml(info.label) + '</span><strong class="direction-summary-value">' +
+          formatMoney(balance) + '</strong><span class="direction-summary-note">元 · 目前方向的逐列結餘</span></div>' +
+          '<div class="statement-heading"><div><h2 id="selected-direction-heading">對帳明細</h2></div>' +
+          '<p>＋分攤<br>−結清</p></div><div class="statement-list">' + statementMarkup +
+          '</div><p class="history-meta">已沖銷的支出不會出現在這張方向對帳表。</p></section>' +
+          renderPinnedSettleBar(selectedDirection) + '</section>';
+      }
+
+      function renderSummaryStrip() {
+        const balances = calculateBalances();
+        return '<div class="summary-strip" aria-label="兩筆應付摘要"><span class="summary-strip-label">目前兩筆應付 · 各自計算</span>' +
+          '<div class="summary-pills">' + directionOrder.map(function (direction) {
+            return '<div class="summary-pill"><span>' + escapeHtml(directions[direction].short) +
+              '</span><strong>' + formatMoney(balances[direction]) + '</strong></div>';
+          }).join('') + '</div></div>';
+      }
+
+      function renderMonth(month, rows) {
+        const totals = {};
+        directionOrder.forEach(function (direction) {
+          totals[direction] = rows.reduce(function (sum, row) {
+            return sum + rowEffect(row, direction);
+          }, 0n);
+        });
+        return '<section class="timeline-month"><div class="month-heading"><h3>' +
+          escapeHtml(monthLabel(month)) + '</h3><span>' + rows.length + ' 筆紀錄</span></div>' +
+          '<div class="month-subtotals">' + directionOrder.map(function (direction) {
+            return '<span class="month-subtotal"><span>' + escapeHtml(directions[direction].short) +
+              ' · 本月變化</span><strong>' + escapeHtml(formatSigned(totals[direction])) + '</strong></span>';
+          }).join('') + '</div><div class="timeline-list">' +
+          rows.map(renderTimelineRow).join('') + '</div></section>';
+      }
+
+      function renderTimelineRow(row) {
+        const settlement = row.type === 'settlement';
+        const amountText = settlement
+          ? '−' + formatMoney(parseMoney(row.amount))
+          : formatMoney(parseMoney(row.amount));
+        const voidBadge = row.voided ? '<span class="void-badge">已沖銷</span>' : '';
+        const route = settlement
+          ? '<span class="settlement-badge">' + escapeHtml(directions[directionFor(row.payer, otherPartner(row.payer))].short) + '</span>'
+          : '<span class="direction-badge">' + escapeHtml(rowRoute(row)) + '</span>';
+        return '<article class="' + rowClasses(row, 'timeline') + '"><div class="timeline-rail"><span class="timeline-dot"></span></div>' +
+          '<div class="timeline-content"><div class="timeline-row-top"><span class="timeline-title">' +
+          escapeHtml(rowCategory(row)) + '</span><strong class="timeline-amount">' + amountText +
+          '</strong></div><div class="timeline-row-meta"><span class="timeline-date">' + escapeHtml(dateShort(row.date)) +
+          '</span>' + route + '<span class="effect-chip">' + escapeHtml(rowEffectText(row)) + '</span>' +
+          voidBadge + '</div><p class="timeline-effect">' + escapeHtml(settlement ? row.payer + ' 已結清給 ' + otherPartner(row.payer) :
+            row.payer + '付款 · ' + splitLabels[row.split] + ' · ' + rowEffectText(row)) + '</p></div></article>';
+      }
+
+      function renderTimeline() {
+        const groups = {};
+        sortedRows(true).forEach(function (row) {
+          const month = row.date.slice(0, 7);
+          if (!groups[month]) {
+            groups[month] = [];
+          }
+          groups[month].push(row);
+        });
+        return Object.keys(groups).sort().reverse().map(function (month) {
+          return renderMonth(month, groups[month]);
+        }).join('');
+      }
+
+      function renderBottomSheet() {
+        if (!settleState || settleState.surface !== 'sheet') {
+          return '';
+        }
+        const direction = settleState.direction;
+        return '<div class="sheet-layer" role="dialog" aria-modal="true" aria-labelledby="sheet-heading">' +
+          '<button type="button" class="sheet-backdrop" data-action="close-sheet" aria-label="關閉結清視窗"></button>' +
+          '<section class="bottom-sheet"><div class="sheet-heading"><div><h2 id="sheet-heading">結清一筆帳</h2>' +
+          '<p>先選方向，再輸入這次要付的金額。</p></div><button type="button" class="sheet-close" data-action="close-sheet">關閉</button></div>' +
+          '<div class="direction-radio-grid" role="radiogroup" aria-label="結清方向">' + directionOrder.map(function (candidate) {
+            const selected = candidate === direction;
+            return '<label class="direction-radio-card' + (selected ? ' selected' : '') + '"><input type="radio" name="sheet-direction" value="' +
+              candidate + '" data-sheet-direction' + (selected ? ' checked' : '') + ' /><strong>' +
+              escapeHtml(directions[candidate].label) + '</strong><span>目前還有 ' + formatMoney(outstanding(candidate)) + ' 元</span></label>';
+          }).join('') + '</div>' + renderSettleForm(direction, 'settle-form--sheet').replace('class="primary-action"', 'class="sheet-submit"') +
+          '</section></div>';
+      }
+
+      function renderVariantC() {
+        return '<section class="variant-panel variant-c" aria-labelledby="variant-c-heading">' +
+          '<section class="timeline-card"><div class="section-heading"><h2 id="variant-c-heading">全部時間軸 <span>按月分組</span></h2>' +
+          '<span class="card-kicker">完整歷史</span></div>' + renderTimeline() + '</section>' +
+          '<button type="button" class="settle-fab" data-action="open-sheet" aria-label="開啟結清視窗"><strong>＋ 結清</strong><span>新增一列</span></button>' +
+          renderBottomSheet() + '</section>';
+      }
+
+      function renderSwitcher() {
+        if (!devHost) {
+          return '';
+        }
+        const index = variantOrder.indexOf(activeVariant);
+        return '<nav class="variant-switcher" aria-label="原型變體切換">' +
+          '<button type="button" data-variant-step="-1" aria-label="上一個變體">←</button>' +
+          '<span class="variant-switcher-label">' + escapeHtml(variantLabels[activeVariant]) +
+          '</span>' +
+          '<button type="button" data-variant-step="1" aria-label="下一個變體">→</button>' +
+          '</nav>';
+      }
+
+      function renderApp() {
+        const variantMarkup = activeVariant === 'A'
+          ? renderVariantA()
+          : activeVariant === 'B'
+            ? renderVariantB()
+            : renderVariantC();
+        const summaryMarkup = activeVariant === 'C' ? renderSummaryStrip() : '';
+        root.innerHTML = summaryMarkup + '<header class="prototype-header">' +
+          '<span class="prototype-eyebrow">PARTNER LEDGER · BALANCE LAB</span>' +
+          '<div class="prototype-title-row"><h1 class="prototype-title">兩筆帳，各自算清</h1>' +
+          '<span class="prototype-tag">' + escapeHtml(activeVariant) + '</span></div>' +
+          '<p class="prototype-subtitle">' + escapeHtml(variantNotes[activeVariant]) +
+          '</p></header><p class="notice" data-role="notice" aria-live="polite">' + escapeHtml(notice) +
+          '</p>' + variantMarkup + renderSwitcher();
+        syncUi();
+      }
+
+      function syncUi() {
+        const message = root.querySelector('[data-role="notice"]');
+        if (message) {
+          message.textContent = notice;
+        }
+      }
+
+      function cycleVariant(delta) {
+        if (!devHost) {
+          return;
+        }
+        const currentIndex = variantOrder.indexOf(activeVariant);
+        const nextIndex = (currentIndex + delta + variantOrder.length) % variantOrder.length;
+        activeVariant = variantOrder[nextIndex];
+        const url = new URL(location.href);
+        url.searchParams.set('variant', activeVariant);
+        history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString() + url.hash);
+        notice = '';
+        settleState = null;
+        renderApp();
+        window.scrollTo(0, 0);
+      }
+
+      function openSettle(direction, surface) {
+        if (outstanding(direction) <= 0n) {
+          notice = '這個方向目前沒有待結清金額。';
+          syncUi();
+          return;
+        }
+        settleState = {
+          direction: direction,
+          surface: surface,
+          amount: formatMoney(outstanding(direction)),
+        };
+        notice = '';
+        renderApp();
+      }
+
+      function openSheet() {
+        const direction = outstanding('zhe-to-yu') > 0n ? 'zhe-to-yu' : 'yu-to-zhe';
+        settleState = {
+          direction: direction,
+          surface: 'sheet',
+          amount: formatMoney(outstanding(direction)),
+        };
+        notice = '';
+        renderApp();
+      }
+
+      function closeSettle() {
+        settleState = null;
+        notice = '';
+        renderApp();
+      }
+
+      function clampSettleInput(target) {
+        if (!settleState) {
+          return;
+        }
+        const cap = outstanding(settleState.direction);
+        const entered = parseMoney(target.value);
+        if (entered > cap) {
+          target.value = formatMoney(cap);
+        }
+        settleState.amount = target.value;
+      }
+
+      function appendSettlement() {
+        if (!settleState) {
+          return;
+        }
+        const direction = settleState.direction;
+        const cap = outstanding(direction);
+        const entered = parseMoney(settleState.amount);
+        if (entered <= 0n) {
+          notice = '請輸入大於 0 的結清金額。';
+          syncUi();
+          return;
+        }
+        const amount = entered > cap ? cap : entered;
+        if (amount <= 0n) {
+          notice = '這個方向已經沒有可結清的金額。';
+          syncUi();
+          return;
+        }
+        const info = directions[direction];
+        ledgerRows.push({
+          id: 'settlement-' + String(nextSequence).padStart(2, '0'),
+          type: 'settlement',
+          date: today(),
+          amount: formatMoney(amount),
+          payer: info.debtor,
+          split: null,
+          category: '結清',
+          counterparty: '剛剛新增',
+          voided: false,
+          sequence: nextSequence,
+        });
+        nextSequence += 1;
+        settleState = null;
+        notice = info.debtor + ' 已結清 ' + formatMoney(amount) + ' 元給 ' + info.creditor + '。';
+        renderApp();
+      }
+
+      function isEditableTarget(target) {
+        return target instanceof HTMLElement &&
+          (target.matches('input, textarea, select') ||
+            target.isContentEditable ||
+            Boolean(target.closest('[contenteditable="true"]')));
+      }
+
+      root.addEventListener('input', function (event) {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && target.matches('[data-settle-amount]')) {
+          clampSettleInput(target);
+          notice = '';
+          syncUi();
+        }
+      });
+
+      root.addEventListener('change', function (event) {
+        const target = event.target;
+        if (target instanceof HTMLInputElement && target.matches('[data-sheet-direction]')) {
+          if (!settleState) {
+            return;
+          }
+          settleState.direction = target.value;
+          settleState.amount = formatMoney(outstanding(target.value));
+          notice = '';
+          renderApp();
+        }
+      });
+
+      root.addEventListener('click', function (event) {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        const button = target.closest('button');
+        if (!button || !root.contains(button)) {
+          return;
+        }
+
+        if (button.dataset.variantStep) {
+          cycleVariant(Number(button.dataset.variantStep));
+          return;
+        }
+        if (button.dataset.directionTab) {
+          selectedDirection = button.dataset.directionTab;
+          settleState = null;
+          notice = '';
+          renderApp();
+          return;
+        }
+        if (button.dataset.action === 'open-settle') {
+          openSettle(button.dataset.direction, button.dataset.surface);
+          return;
+        }
+        if (button.dataset.action === 'open-sheet') {
+          openSheet();
+          return;
+        }
+        if (button.dataset.action === 'cancel-settle' || button.dataset.action === 'close-sheet') {
+          closeSettle();
+        }
+      });
+
+      root.addEventListener('submit', function (event) {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.matches('[data-settle-form]')) {
+          return;
+        }
+        event.preventDefault();
+        appendSettlement();
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (!devHost || isEditableTarget(event.target)) {
+          return;
+        }
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          cycleVariant(-1);
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          cycleVariant(1);
+        }
+      });
+
+      window.addEventListener('popstate', function () {
+        activeVariant = readVariantFromUrl();
+        settleState = null;
+        renderApp();
+      });
+
+      renderApp();
+    </script>
+  </body>
+</html>

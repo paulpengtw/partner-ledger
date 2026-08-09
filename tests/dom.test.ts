@@ -2,73 +2,58 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   CACHED_OPTIONS,
-  PARTIALLY_SETTLED_GROUPS,
-  RECEIVABLE_GROUPS,
-  RECENT_TRANSACTIONS,
-  REFRESHED_OPTIONS,
+  LIST_RESULT,
+  OVER_SETTLED_RESULT,
 } from './pwa-fixtures'
+
+const FIXED_UUID = '3b241101-e2bb-4255-8caf-4136c566a962'
 
 const apiMocks = vi.hoisted(() => ({
   authCheck: vi.fn(),
-  listReceivables: vi.fn(),
   listTransactions: vi.fn(),
   loadOptions: vi.fn(),
   reverseTransaction: vi.fn(),
+  settle: vi.fn(),
   submitTransaction: vi.fn(),
-  settleReceivable: vi.fn(),
 }))
 
-vi.mock('../src/api', () => ({
-  authCheck: apiMocks.authCheck,
-  listReceivables: apiMocks.listReceivables,
-  listTransactions: apiMocks.listTransactions,
-  loadOptions: apiMocks.loadOptions,
-  reverseTransaction: apiMocks.reverseTransaction,
-  submitTransaction: apiMocks.submitTransaction,
-  settleReceivable: apiMocks.settleReceivable,
-}))
+vi.mock('../src/api', () => apiMocks)
 
 import { mountApp } from '../src/main'
 
 let unmount: (() => void) | undefined
 
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
-}
-
-function mount(
-  options: unknown = CACHED_OPTIONS,
-  refresh: Promise<unknown> = new Promise(() => {}),
-) {
-  apiMocks.loadOptions.mockReturnValue({
-    cached: options,
-    refresh,
-  })
-  unmount = mountApp(document.querySelector<HTMLElement>('#app')!, {
-    today: () => '2026-07-27',
-    randomUUID: () => '3b241101-e2bb-4255-8caf-4136c566a962',
-  })
-}
-
 function click(selector: string): void {
-  document.querySelector<HTMLButtonElement>(selector)!.click()
+  const element = document.querySelector<HTMLButtonElement>(selector)
+  if (!element) throw new Error(`button not found: ${selector}`)
+  element.click()
 }
 
 function input(selector: string, value: string): void {
-  const element = document.querySelector<HTMLInputElement>(selector)!
+  const element = document.querySelector<HTMLInputElement>(selector)
+  if (!element) throw new Error(`input not found: ${selector}`)
   element.value = value
   element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function fillExpense(description = '晚餐'): void {
-  for (const key of ['2', '6', '0']) click(`#keypad [data-key="${key}"]`)
+function mount(result = LIST_RESULT): void {
+  apiMocks.listTransactions.mockResolvedValue(result)
+  apiMocks.loadOptions.mockReturnValue({
+    cached: CACHED_OPTIONS,
+    refresh: new Promise(() => {}),
+  })
+  unmount = mountApp(document.querySelector<HTMLElement>('#app')!, {
+    today: () => '2026-08-09',
+    randomUUID: () => FIXED_UUID,
+  })
+}
+
+function enterConfirm(split = '均分'): void {
+  for (const key of ['3', '0', '0']) click(`#keypad [data-key="${key}"]`)
   click('#next-amount')
-  click('#account-picker [data-account="錢包"]')
+  click('#payer-buttons [data-payer="小語"]')
+  click(`#split-buttons [data-split="${split}"]`)
   click('#category-grid [data-category="餐飲"]')
-  click('.step-panel[data-step="counterparty"] .step-next')
-  input('#description-input', description)
   click('.step-panel[data-step="details"] .step-next')
 }
 
@@ -78,18 +63,17 @@ beforeEach(() => {
     ok: true,
     exp: Math.floor(Date.now() / 1000) + 3600,
   })
-  apiMocks.listReceivables.mockReset().mockResolvedValue(RECEIVABLE_GROUPS)
-  apiMocks.listTransactions.mockReset().mockResolvedValue(RECENT_TRANSACTIONS)
+  apiMocks.listTransactions.mockReset().mockResolvedValue(LIST_RESULT)
   apiMocks.loadOptions.mockReset()
   apiMocks.reverseTransaction.mockReset().mockResolvedValue({
     ok: true,
     alreadyRecorded: false,
   })
-  apiMocks.submitTransaction.mockReset().mockResolvedValue({
+  apiMocks.settle.mockReset().mockResolvedValue({
     ok: true,
     alreadyRecorded: false,
   })
-  apiMocks.settleReceivable.mockReset().mockResolvedValue({
+  apiMocks.submitTransaction.mockReset().mockResolvedValue({
     ok: true,
     alreadyRecorded: false,
   })
@@ -98,819 +82,340 @@ beforeEach(() => {
 afterEach(() => {
   unmount?.()
   unmount = undefined
-  vi.useRealTimers()
 })
 
-describe('selection-first entry form', () => {
-  it('starts at amount, advances from account to category, and uses the journal strip', () => {
+describe('partner entry wizard', () => {
+  it('starts at amount, types 300, and renders two unselected payer buttons', () => {
     mount()
 
-    const panels = [...document.querySelectorAll<HTMLElement>('.step-panel')]
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
       .toBe('amount')
-    expect(panels.filter(panel => panel.getAttribute('aria-hidden') === 'false'))
+    expect(document.querySelectorAll('.step-panel[aria-hidden="false"]'))
       .toHaveLength(1)
-    expect(document.querySelector<HTMLElement>('[data-step="amount"]')
-      ?.getAttribute('aria-hidden')).toBe('false')
+    expect(document.querySelector('#next-amount'))
+      .toHaveProperty('disabled', true)
 
-    for (const key of ['2', '6', '0']) click(`#keypad [data-key="${key}"]`)
+    for (const key of ['3', '0', '0']) click(`#keypad [data-key="${key}"]`)
+
+    expect(document.querySelector('#amount-display')?.textContent).toBe('300')
+    expect(document.querySelector('#next-amount'))
+      .toHaveProperty('disabled', false)
     click('#next-amount')
-    click('#account-picker [data-account="錢包"]')
 
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('category')
-
-    click('#journal-strip [data-strip-step="amount"]')
-
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('amount')
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('payer')
+    const payerButtons = document.querySelectorAll<HTMLButtonElement>(
+      '#payer-buttons [data-payer]',
+    )
+    expect([...payerButtons].map(button => button.dataset['payer']))
+      .toEqual(['阿哲', '小語'])
+    expect([...payerButtons].map(button => button.getAttribute('aria-pressed')))
+      .toEqual(['false', 'false'])
   })
 
-  it('confirm step shows legs and amount for expense', () => {
+  it('advances from payer to split and from the default equal split to details', () => {
     mount()
-    fillExpense()
-
-    const card = document.querySelector<HTMLElement>('#confirm-card')!
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('confirm')
-    expect(card.textContent).toContain('借')
-    expect(card.textContent).toContain('貸')
-    expect(card.textContent).toContain('餐飲')
-    expect(card.textContent).toContain('錢包')
-    expect(card.textContent).toContain('260')
-  })
-
-  it('confirm step shows legs for transfer', () => {
-    mount()
-    click('#type-toggle [data-type="轉帳"]')
-    for (const key of ['2', '6', '0']) click(`#keypad [data-key="${key}"]`)
+    for (const key of ['3', '0', '0']) click(`#keypad [data-key="${key}"]`)
     click('#next-amount')
-    click('#account-picker [data-account="錢包"]')
-    click('#to-account-picker [data-account="台新銀行"]')
-    input('#description-input', '轉帳')
-    click('.step-panel[data-step="details"] .step-next')
 
-    const card = document.querySelector<HTMLElement>('#confirm-card')!
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('confirm')
-    expect(card.textContent).toContain('台新銀行')
-    expect(card.textContent).toContain('錢包')
-  })
-
-  it('tapping debit leg jumps to category; editing returns to confirm; payload updated', async () => {
-    mount()
-    fillExpense()
-
-    click('#confirm-card .confirm-row[data-edit-step="category"]')
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('category')
-
-    click('#category-grid [data-category="交通"]')
-    expect(document.querySelector<HTMLElement>('#entry-view')?.dataset['activeStep'])
-      .toBe('confirm')
-
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    expect(apiMocks.submitTransaction).toHaveBeenCalledWith(expect.objectContaining({
-      category: '交通',
-    }), '3b241101-e2bb-4255-8caf-4136c566a962')
-  })
-
-  it('scrolls the active journal chip after a step change', () => {
-    const scrollIntoView = vi.fn()
-    const prototype = HTMLElement.prototype as unknown as Record<string, unknown>
-    const original = Object.getOwnPropertyDescriptor(prototype, 'scrollIntoView')
-    Object.defineProperty(prototype, 'scrollIntoView', {
-      configurable: true,
-      value: scrollIntoView,
-    })
-
-    try {
-      mount()
-      for (const key of ['2', '6', '0']) click(`#keypad [data-key="${key}"]`)
-      click('#next-amount')
-      click('#account-picker [data-account="錢包"]')
-      click('#journal-strip [data-strip-step="amount"]')
-
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        block: 'nearest',
-        inline: 'nearest',
-      })
-      expect(scrollIntoView).toHaveBeenCalledTimes(3)
-    } finally {
-      if (original) {
-        Object.defineProperty(prototype, 'scrollIntoView', original)
-      } else {
-        delete prototype['scrollIntoView']
-      }
-    }
-  })
-
-  it('step-guard class is added on step change and removed after 300ms', () => {
-    vi.useFakeTimers()
-    try {
-      mount()
-      click('#keypad [data-key="2"]')
-      click('#next-amount')
-
-      const entryView = document.getElementById('entry-view')!
-      expect(entryView.classList.contains('step-guard')).toBe(true)
-
-      vi.advanceTimersByTime(300)
-      expect(entryView.classList.contains('step-guard')).toBe(false)
-
-      unmount?.()
-      unmount = undefined
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('keyboard-open class tracks visualViewport height', () => {
-    const viewport = new EventTarget() as EventTarget & { height: number }
-    viewport.height = window.innerHeight
-    const removeEventListener = vi.spyOn(viewport, 'removeEventListener')
-    Object.defineProperty(window, 'visualViewport', {
-      configurable: true,
-      value: viewport,
-    })
-
-    try {
-      mount()
-
-      const app = document.getElementById('app')!
-      expect(app.classList.contains('keyboard-open')).toBe(false)
-
-      viewport.height = Math.floor(window.innerHeight * 0.5)
-      viewport.dispatchEvent(new Event('resize'))
-      expect(app.classList.contains('keyboard-open')).toBe(true)
-
-      viewport.height = window.innerHeight
-      viewport.dispatchEvent(new Event('resize'))
-      expect(app.classList.contains('keyboard-open')).toBe(false)
-
-      unmount?.()
-      unmount = undefined
-      expect(removeEventListener).toHaveBeenCalledWith(
-        'resize',
-        expect.any(Function),
-      )
-    } finally {
-      delete (window as unknown as { visualViewport?: unknown }).visualViewport
-    }
-  })
-
-  it('renders accounts grouped by 子類型, per-type categories, and tappable 交易對象 suggestions', () => {
-    mount()
-
-    expect(document.querySelector('[data-subtype="現金"]')?.textContent).toContain('錢包')
-    expect(document.querySelector('[data-subtype="銀行"]')?.textContent).toContain('台新銀行')
-    expect(document.querySelector('[data-subtype="信用卡"]')?.textContent).toContain('國泰卡')
-    expect(document.querySelector('#category-grid')?.textContent).toContain('餐飲')
-    expect(document.querySelector('#category-grid')?.textContent).not.toContain('薪資')
-    expect(document.querySelector('#counterparty-suggestions')?.textContent).toContain('全聯')
-    expect(document.querySelector<HTMLElement>('#iou-toggle')?.hidden).toBe(false)
-
-    click('#type-toggle [data-type="收入"]')
-    expect(document.querySelector('#category-grid')?.textContent).toContain('薪資')
-    expect(document.querySelector('#category-grid')?.textContent).not.toContain('餐飲')
-    expect(document.querySelector<HTMLElement>('#iou-toggle')?.hidden).toBe(true)
-
-    click('#type-toggle [data-type="轉帳"]')
-    expect(document.querySelector('#category-section')).toHaveProperty('hidden', true)
-    expect(document.querySelector('#to-account-section')).toHaveProperty('hidden', false)
-    expect(document.querySelector<HTMLElement>('#iou-toggle')?.hidden).toBe(true)
-  })
-
-  it('keeps submit blocked when required 說明 is whitespace', () => {
-    mount()
-    fillExpense('   ')
-
-    const submit = document.querySelector<HTMLButtonElement>('#submit-btn')!
-    expect(submit.disabled).toBe(true)
-    submit.click()
-    expect(apiMocks.submitTransaction).not.toHaveBeenCalled()
-  })
-
-  it('posts the exact transaction contract with a UUID idempotencyKey', async () => {
-    mount()
-    fillExpense()
-    click('#journal-strip [data-strip-step="counterparty"]')
-    click('#counterparty-suggestions [data-counterparty="全聯"]')
-
-    click('#submit-btn')
-
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    expect(apiMocks.submitTransaction).toHaveBeenCalledWith({
-      type: '支出',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
-      category: '餐飲',
-      payee: '全聯',
-      currency: 'TWD',
-    }, '3b241101-e2bb-4255-8caf-4136c566a962')
-  })
-
-  it('selects 代墊 應收 by hiding and clearing category and requiring 交易對象', async () => {
-    mount()
-    fillExpense()
-    click('#journal-strip [data-strip-step="counterparty"]')
-
-    const toggle = document.querySelector<HTMLButtonElement>(
-      '#iou-toggle [data-iou="應收"]',
+    click('#payer-buttons [data-payer="小語"]')
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('split')
+    const splitButtons = document.querySelectorAll<HTMLButtonElement>(
+      '#split-buttons [data-split]',
     )
-    expect(toggle).not.toBeNull()
-    toggle?.click()
-
-    expect(document.querySelector<HTMLElement>('#category-section')?.hidden).toBe(true)
-    expect(document.querySelector('#category-grid .selected')).toBeNull()
-    expect(document.querySelector('#counterparty-heading')?.textContent).toContain('必填')
-    expect(document.querySelector<HTMLInputElement>('#counterparty-input')?.required).toBe(true)
-    expect(document.querySelector<HTMLButtonElement>('#submit-btn')?.disabled).toBe(true)
-
-    input('#counterparty-input', '阿明')
-    click('.step-panel[data-step="counterparty"] .step-next')
-    click('#submit-btn')
-
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    expect(apiMocks.submitTransaction).toHaveBeenCalledWith({
-      type: '支出',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
-      payee: '阿明',
-      currency: 'TWD',
-      iou: '應收',
-    }, '3b241101-e2bb-4255-8caf-4136c566a962')
-  })
-
-  it('selects 應付 while keeping category and requiring 交易對象', async () => {
-    mount()
-    fillExpense()
-    click('#journal-strip [data-strip-step="counterparty"]')
-
-    const toggle = document.querySelector<HTMLButtonElement>(
-      '#iou-toggle [data-iou="應付"]',
-    )
-    expect(toggle).not.toBeNull()
-    toggle?.click()
-
-    expect(document.querySelector<HTMLElement>('#category-section')?.hidden).toBe(false)
-    expect(document.querySelector('#category-grid .selected')?.textContent).toBe('餐飲')
-    expect(document.querySelector<HTMLInputElement>('#counterparty-input')?.required).toBe(true)
-    expect(document.querySelector<HTMLButtonElement>('#submit-btn')?.disabled).toBe(true)
-
-    input('#counterparty-input', '阿明')
-    click('.step-panel[data-step="counterparty"] .step-next')
-    click('#submit-btn')
-
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    expect(apiMocks.submitTransaction).toHaveBeenCalledWith({
-      type: '支出',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
-      category: '餐飲',
-      payee: '阿明',
-      currency: 'TWD',
-      iou: '應付',
-    }, '3b241101-e2bb-4255-8caf-4136c566a962')
-  })
-
-  it('toggles iou off without clearing category or 交易對象', () => {
-    mount()
-    fillExpense()
-    click('#journal-strip [data-strip-step="counterparty"]')
-    input('#counterparty-input', '阿明')
-
-    const toggle = document.querySelector<HTMLButtonElement>(
-      '#iou-toggle [data-iou="應付"]',
-    )
-    expect(toggle).not.toBeNull()
-    toggle?.click()
-    toggle?.click()
-
-    expect(document.querySelector<HTMLElement>('#category-section')?.hidden).toBe(false)
-    expect(document.querySelector('#category-grid .selected')?.textContent).toBe('餐飲')
-    expect(document.querySelector<HTMLInputElement>('#counterparty-input')?.value).toBe('阿明')
-    expect(document.querySelector<HTMLInputElement>('#counterparty-input')?.required).toBe(false)
-    expect(document.querySelector<HTMLButtonElement>('#submit-btn')?.disabled).toBe(false)
-  })
-
-  it('posts a split as two creates with two different idempotency keys', async () => {
-    const randomUUID = vi.fn()
-      .mockReturnValueOnce('3b241101-e2bb-4255-8caf-4136c566a962')
-      .mockReturnValueOnce('a4dd45e4-4741-42bc-8750-40d3b0bbccca')
-    apiMocks.loadOptions.mockReturnValue({
-      cached: CACHED_OPTIONS,
-      refresh: new Promise(() => {}),
-    })
-    unmount = mountApp(document.querySelector<HTMLElement>('#app')!, {
-      today: () => '2026-07-27',
-      randomUUID,
-    })
-
-    fillExpense('自己的午餐')
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    await new Promise(resolve => setTimeout(resolve, 650))
-
-    fillExpense('代墊午餐')
-    click('#journal-strip [data-strip-step="counterparty"]')
-    const toggle = document.querySelector<HTMLButtonElement>(
-      '#iou-toggle [data-iou="應收"]',
-    )
-    expect(toggle).not.toBeNull()
-    toggle?.click()
-    input('#counterparty-input', '阿明')
-    click('.step-panel[data-step="counterparty"] .step-next')
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(2))
-
-    expect(apiMocks.submitTransaction.mock.calls).toEqual([
-      [
-        expect.objectContaining({
-          amount: 260,
-          category: '餐飲',
-          description: '自己的午餐',
-        }),
-        '3b241101-e2bb-4255-8caf-4136c566a962',
-      ],
-      [
-        expect.objectContaining({
-          amount: 260,
-          payee: '阿明',
-          description: '代墊午餐',
-          iou: '應收',
-        }),
-        'a4dd45e4-4741-42bc-8750-40d3b0bbccca',
-      ],
+    expect([...splitButtons].map(button => button.textContent)).toEqual([
+      '均分',
+      '全額對方',
+      '全額自己',
     ])
-    expect(apiMocks.submitTransaction.mock.calls[1]?.[0]).not.toHaveProperty('category')
+    expect(splitButtons[0]?.getAttribute('aria-pressed')).toBe('true')
+
+    click('#split-buttons [data-split="均分"]')
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('details')
   })
 
-  it('reuses the same idempotencyKey for the second request after failure', async () => {
-    const randomUUID = vi.fn()
-      .mockReturnValueOnce('3b241101-e2bb-4255-8caf-4136c566a962')
-      .mockReturnValueOnce('a4dd45e4-4741-42bc-8750-40d3b0bbccca')
-    apiMocks.loadOptions.mockReturnValue({
-      cached: CACHED_OPTIONS,
-      refresh: new Promise(() => {}),
-    })
-    apiMocks.submitTransaction
-      .mockResolvedValueOnce({ ok: false, kind: 'network', message: '連線失敗' })
-      .mockResolvedValueOnce({ ok: true, alreadyRecorded: false })
-    unmount = mountApp(document.querySelector<HTMLElement>('#app')!, {
-      today: () => '2026-07-27',
-      randomUUID,
-    })
-    fillExpense()
+  it('shows the equal-share payable preview on confirm', () => {
+    mount()
+    enterConfirm()
 
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(2))
-
-    const firstKey = apiMocks.submitTransaction.mock.calls[0]![1]
-    const retryKey = apiMocks.submitTransaction.mock.calls[1]![1]
-    expect(retryKey).toBe(firstKey)
-    expect(randomUUID).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('confirm')
+    expect(document.querySelector('#confirm-card')?.textContent)
+      .toContain('300')
+    expect(document.querySelector('#confirm-card')?.textContent)
+      .toContain('小語')
+    expect(document.querySelector('#confirm-card')?.textContent)
+      .toContain('均分')
+    expect(document.querySelector('#confirm-card')?.textContent)
+      .toContain('餐飲')
+    expect(document.querySelector('#preview')?.textContent)
+      .toContain('阿哲 應付 小語')
+    expect(document.querySelector('#preview')?.textContent).toContain('150')
   })
 
-  it('shows a soft schema warning while leaving the form usable', async () => {
-    const refresh = deferred<typeof REFRESHED_OPTIONS>()
-    mount(CACHED_OPTIONS, refresh.promise)
-    refresh.resolve(REFRESHED_OPTIONS)
+  it('shows no payable for the full-self split', () => {
+    mount()
+    enterConfirm('全額自己')
 
+    expect(document.querySelector('#preview')?.textContent)
+      .toContain('不產生應付')
+  })
+
+  it('edits payer from confirm and returns directly with a reversed preview', () => {
+    mount()
+    enterConfirm()
+
+    click('#confirm-card [data-edit="payer"]')
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('payer')
+    click('#payer-buttons [data-payer="阿哲"]')
+
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('confirm')
+    expect(document.querySelector('#confirm-card')?.textContent).toContain('阿哲')
+    expect(document.querySelector('#preview')?.textContent)
+      .toContain('小語 應付 阿哲')
+    expect(document.querySelector('#preview')?.textContent).toContain('150')
+  })
+
+  it('submits the exact transaction, resets immediately, and refreshes the list', async () => {
+    mount()
+    enterConfirm()
+
+    click('#submit-button')
     await vi.waitFor(() => {
-      expect(document.querySelector<HTMLElement>('#schema-banner')!.hidden).toBe(false)
+      expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1)
     })
-    expect(document.querySelector('#schema-banner')?.textContent).toContain('選項已更新')
 
-    fillExpense()
-    click('#submit-btn')
+    expect(apiMocks.submitTransaction).toHaveBeenCalledWith({
+      date: '2026-08-09',
+      amount: 300,
+      payer: '小語',
+      split: '均分',
+      category: '餐飲',
+    }, FIXED_UUID)
+    expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
+      .toBe('amount')
+    expect(document.querySelector('#split-buttons [data-split="均分"]')
+      ?.getAttribute('aria-pressed')).toBe('true')
+    await vi.waitFor(() => {
+      expect(apiMocks.listTransactions).toHaveBeenCalledTimes(2)
+    })
+  })
 
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
+  it('shows backend errors and reuses the idempotency key on retry', async () => {
+    apiMocks.submitTransaction
+      .mockResolvedValueOnce({
+        ok: false,
+        kind: 'backend',
+        message: '伺服器暫時忙碌',
+      })
+      .mockResolvedValueOnce({ ok: true, alreadyRecorded: false })
+    mount()
+    enterConfirm()
+
+    click('#submit-button')
+    await vi.waitFor(() => {
+      expect(document.querySelector('#submit-note')?.textContent)
+        .toContain('伺服器暫時忙碌')
+    })
+    const firstKey = apiMocks.submitTransaction.mock.calls[0]?.[1]
+
+    click('#submit-button')
+    await vi.waitFor(() => {
+      expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(2)
+    })
+    expect(apiMocks.submitTransaction.mock.calls[1]?.[1]).toBe(firstKey)
+  })
+
+  it('shows the auth overlay when submit reports an auth failure', async () => {
+    apiMocks.submitTransaction.mockResolvedValue({
+      ok: false,
+      kind: 'auth',
+      message: '登入已過期',
+    })
+    mount()
+    enterConfirm()
+
+    click('#submit-button')
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLElement>('#auth-overlay')?.hidden)
+        .toBe(false)
+    })
   })
 })
 
-describe('recent entries view', () => {
-  it('renders list_transactions rows with a set or blank 結清狀態', async () => {
+describe('transaction list', () => {
+  it('renders voided and hand rows, refreshes, and reverses a real transaction', async () => {
     mount()
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll('#transaction-list .transaction-row'))
+        .toHaveLength(4)
+    })
 
-    click('[data-view="recent"]')
+    click('#view-switch [data-view="list"]')
+    expect(document.querySelector<HTMLElement>('#list-view')?.hidden).toBe(false)
 
-    await vi.waitFor(() => expect(apiMocks.listTransactions).toHaveBeenCalledWith(
-      '0001-01-01',
-      '9999-12-31',
-    ))
-    const rows = document.querySelectorAll('.transaction-row')
-    expect(rows).toHaveLength(2)
-    expect(rows[0]?.textContent).toContain('晚餐')
-    expect(rows[0]?.textContent).toContain('260.00')
-    expect(rows[1]?.textContent).toContain('手動補登')
-    const statuses = document.querySelectorAll('.transaction-status')
-    expect(statuses[0]?.textContent).toBe('未結')
-    expect(statuses[1]?.textContent).toBe('')
-  })
+    const voided = document.querySelector<HTMLElement>('[data-txn-id="txn-voided"]')
+    expect(voided?.classList.contains('voided')).toBe(true)
+    const handRow = [...document.querySelectorAll<HTMLElement>(
+      '#transaction-list .transaction-row',
+    )].find(row => row.textContent?.includes('手動'))
+    expect(handRow).toBeDefined()
+    expect(handRow?.querySelector('[data-reverse]')).toBeNull()
 
-  it('fetches on each switch and keeps the entry form usable afterward', async () => {
-    const newlyPosted = {
-      ...RECENT_TRANSACTIONS[0],
-      txn_id: 'txn-new',
-      說明: '切換後晚餐',
-    }
-    apiMocks.listTransactions
-      .mockResolvedValueOnce(RECENT_TRANSACTIONS)
-      .mockResolvedValueOnce([newlyPosted, ...RECENT_TRANSACTIONS])
-    mount()
-    fillExpense('切換後晚餐')
+    click('#refresh-transactions')
+    await vi.waitFor(() => {
+      expect(apiMocks.listTransactions).toHaveBeenCalledTimes(2)
+    })
 
-    click('[data-view="recent"]')
-    await vi.waitFor(() => expect(apiMocks.listTransactions).toHaveBeenCalledTimes(1))
-    click('[data-view="entry"]')
-
-    expect(document.querySelector<HTMLInputElement>('#description-input')?.value)
-      .toBe('切換後晚餐')
-    expect(document.querySelector<HTMLButtonElement>('#submit-btn')?.disabled)
+    click('[data-reverse="meal-1"]')
+    expect(document.querySelector<HTMLElement>('#confirm-reverse')?.hidden)
       .toBe(false)
-    click('#submit-btn')
-    await vi.waitFor(() => expect(apiMocks.submitTransaction).toHaveBeenCalledTimes(1))
-
-    click('[data-view="recent"]')
-    await vi.waitFor(() => expect(apiMocks.listTransactions).toHaveBeenCalledTimes(2))
-    expect(document.querySelector('.transaction-row')?.textContent)
-      .toContain('切換後晚餐')
-  })
-
-  it('offers reversal for an addressable ordinary row and requires confirmation', async () => {
-    mount()
-    click('[data-view="recent"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-reverse-txn-id="txn-recent"]'))
-        .not.toBeNull()
-    })
-
-    click('[data-reverse-txn-id="txn-recent"]')
-
-    const confirmation = document.querySelector<HTMLElement>(
-      '#reverse-confirmation',
-    )
-    expect(confirmation?.hidden).toBe(false)
-    expect(confirmation?.textContent).toContain('確認沖銷')
-    expect(confirmation?.textContent).toContain('晚餐')
-    expect(apiMocks.reverseTransaction).not.toHaveBeenCalled()
-  })
-
-  it('reverses with a UUID after confirmation and refreshes recent entries', async () => {
-    apiMocks.listTransactions
-      .mockResolvedValueOnce(RECENT_TRANSACTIONS)
-      .mockResolvedValueOnce(RECENT_TRANSACTIONS.slice(1))
-    mount()
-    click('[data-view="recent"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-reverse-txn-id="txn-recent"]'))
-        .not.toBeNull()
-    })
-    click('[data-reverse-txn-id="txn-recent"]')
-
     click('#confirm-reverse')
 
     await vi.waitFor(() => {
       expect(apiMocks.reverseTransaction).toHaveBeenCalledWith({
-        txn_id: 'txn-recent',
-        date: '2026-07-27',
-      }, '3b241101-e2bb-4255-8caf-4136c566a962')
+        txn_id: 'meal-1',
+        date: '2026-08-09',
+      }, FIXED_UUID)
+    })
+    await vi.waitFor(() => {
+      expect(apiMocks.listTransactions).toHaveBeenCalledTimes(3)
+    })
+  })
+})
+
+describe('分向對帳 balance view', () => {
+  async function showBalance(result = LIST_RESULT): Promise<void> {
+    mount(result)
+    click('#view-switch [data-view="balance"]')
+    await vi.waitFor(() => {
+      expect(document.querySelector('#outstanding-amount')?.textContent)
+        .toBe(result.payables.directions[0]?.outstanding.toString())
+    })
+  }
+
+  it('shows ordered direction tabs and the first outstanding amount by default', async () => {
+    await showBalance()
+
+    const tabs = document.querySelectorAll<HTMLButtonElement>(
+      '#direction-tabs button',
+    )
+    expect([...tabs].map(tab => tab.textContent)).toEqual([
+      '阿哲→小語',
+      '小語→阿哲',
+    ])
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true')
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('false')
+    expect(document.querySelector('#outstanding-amount')?.textContent)
+      .toBe('50')
+  })
+
+  it('derives oldest-first statement effects and running balances without voided lines', async () => {
+    await showBalance()
+
+    const lines = document.querySelectorAll<HTMLElement>(
+      '#statement-list .statement-line',
+    )
+    expect(lines).toHaveLength(2)
+    expect(lines[0]?.textContent).toContain('+150')
+    expect(lines[0]?.textContent).toContain('150')
+    expect(lines[1]?.textContent).toContain('-100')
+    expect(lines[1]?.textContent).toContain('50')
+    expect(document.querySelector('#statement-list [data-txn-id="txn-voided"]'))
+      .toBeNull()
+  })
+
+  it('shows an empty statement and disables settlement for the zero direction', async () => {
+    await showBalance()
+
+    click('#direction-tabs button:nth-child(2)')
+
+    expect(document.querySelector('#outstanding-amount')?.textContent)
+      .toBe('0')
+    expect(document.querySelectorAll('#statement-list .statement-line'))
+      .toHaveLength(0)
+    expect(document.querySelector<HTMLButtonElement>('#settle-submit')?.disabled)
+      .toBe(true)
+  })
+
+  it('submits a capped settlement with today and refreshes the shared list', async () => {
+    await showBalance()
+
+    input('#settle-amount', '30')
+    expect(document.querySelector<HTMLButtonElement>('#settle-submit')?.disabled)
+      .toBe(false)
+    click('#settle-submit')
+
+    await vi.waitFor(() => {
+      expect(apiMocks.settle).toHaveBeenCalledWith({
+        date: '2026-08-09',
+        amount: 30,
+        payer: '阿哲',
+      }, FIXED_UUID)
     })
     await vi.waitFor(() => {
       expect(apiMocks.listTransactions).toHaveBeenCalledTimes(2)
     })
-    expect(document.querySelector('[data-reverse-txn-id="txn-recent"]'))
-      .toBeNull()
-  })
-})
-
-describe('outstanding items view', () => {
-  it('groups 應收 and 應付 entries by 交易對象', async () => {
-    mount()
-
-    click('[data-view="outstanding"]')
-
-    await vi.waitFor(() => {
-      expect(apiMocks.listReceivables).toHaveBeenCalledTimes(1)
-    })
-    const groups = document.querySelectorAll<HTMLElement>('.receivable-group')
-    expect(groups).toHaveLength(2)
-    expect(groups[0]?.dataset['counterparty']).toBe('阿明')
-    expect(groups[0]?.textContent).toContain('應收')
-    expect(groups[0]?.textContent).toContain('320 TWD')
-    expect(groups[1]?.dataset['counterparty']).toBe('小美')
-    expect(groups[1]?.textContent).toContain('應付')
-    expect(groups[1]?.textContent).toContain('720 TWD')
   })
 
-  it('renders a hand row without any settle affordance', async () => {
-    mount()
+  it('blocks an entry above the selected direction outstanding', async () => {
+    await showBalance()
 
-    click('[data-view="outstanding"]')
+    input('#settle-amount', '51')
 
-    await vi.waitFor(() => {
-      expect(document.querySelectorAll('.receivable-entry')).toHaveLength(3)
-    })
-    const handRow = document.querySelector<HTMLElement>(
-      '.receivable-entry[data-view-only="true"]',
-    )
-    expect(handRow?.textContent).toContain('手動代墊')
-    expect(handRow?.querySelector('[data-settle-txn-id]')).toBeNull()
-    expect(handRow?.querySelector('button')).toBeNull()
+    expect(document.querySelector<HTMLButtonElement>('#settle-submit')?.disabled)
+      .toBe(true)
+    expect(apiMocks.settle).not.toHaveBeenCalled()
   })
 
-  it('states in the confirmation step that settlement cannot be reversed', async () => {
-    mount()
-    click('[data-view="outstanding"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
-    })
+  it('keeps settlement disabled when the selected direction is zero', async () => {
+    await showBalance()
+    click('#direction-tabs button:nth-child(2)')
 
-    click('[data-settle-txn-id="receivable-open-001"]')
-
-    const confirmation = document.querySelector<HTMLElement>(
-      '#settle-confirmation',
-    )
-    expect(confirmation?.hidden).toBe(false)
-    expect(confirmation?.textContent).toContain('結清後無法復原')
-    expect(apiMocks.settleReceivable).not.toHaveBeenCalled()
+    expect(document.querySelector<HTMLButtonElement>('#settle-submit')?.disabled)
+      .toBe(true)
   })
 
-  it('refreshes the displayed remainder after a partial settle', async () => {
-    apiMocks.listReceivables
-      .mockResolvedValueOnce(RECEIVABLE_GROUPS)
-      .mockResolvedValueOnce(PARTIALLY_SETTLED_GROUPS)
-    mount()
-    click('[data-view="outstanding"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
-    })
-    click('[data-settle-txn-id="receivable-open-001"]')
-    input('#settle-amount', '200')
+  it('marks negative outstanding as over-settled and disables settlement', async () => {
+    await showBalance(OVER_SETTLED_RESULT)
 
-    click('#confirm-settle')
-
-    await vi.waitFor(() => {
-      expect(apiMocks.settleReceivable).toHaveBeenCalledWith({
-        txn_id: 'receivable-open-001',
-        account: '錢包',
-        date: '2026-07-27',
-        amount: 200,
-      }, '3b241101-e2bb-4255-8caf-4136c566a962')
-    })
-    await vi.waitFor(() => {
-      expect(apiMocks.listReceivables).toHaveBeenCalledTimes(2)
-    })
-    const row = document.querySelector<HTMLElement>(
-      '.receivable-entry[data-txn-id="receivable-open-001"]',
-    )
-    expect(row?.textContent).toContain('120 TWD')
-    expect(row?.textContent).not.toContain('320 TWD')
+    const outstanding = document.querySelector<HTMLElement>('#outstanding-amount')
+    expect(outstanding?.classList.contains('over-settled')).toBe(true)
+    expect(outstanding?.textContent).toBe('-150')
+    expect(document.querySelector<HTMLButtonElement>('#settle-submit')?.disabled)
+      .toBe(true)
   })
 
-  it('retries an ambiguous settlement with the same UUID and immutable payload', async () => {
-    apiMocks.settleReceivable
+  it('routes settle backend errors to the note and auth failures to the overlay', async () => {
+    apiMocks.settle
+      .mockReset()
       .mockResolvedValueOnce({
         ok: false,
-        kind: 'network',
-        message: '沒有網路連線，請再試一次',
+        kind: 'backend',
+        message: 'over-settlement: exceeds outstanding',
       })
-      .mockResolvedValueOnce({ ok: true, alreadyRecorded: true })
-    mount()
-    click('[data-view="outstanding"]')
+      .mockResolvedValueOnce({
+        ok: false,
+        kind: 'auth',
+        message: '登入已過期',
+      })
+    await showBalance()
+
+    input('#settle-amount', '30')
+    click('#settle-submit')
     await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
+      expect(document.querySelector('#settle-note')?.textContent)
+        .toContain('over-settlement: exceeds outstanding')
     })
-    click('[data-settle-txn-id="receivable-open-001"]')
-    input('#settle-amount', '200')
 
-    click('#confirm-settle')
-
+    click('#settle-submit')
     await vi.waitFor(() => {
-      expect(apiMocks.settleReceivable).toHaveBeenCalledTimes(1)
+      expect(document.querySelector<HTMLElement>('#auth-overlay')?.hidden)
+        .toBe(false)
     })
-    await vi.waitFor(() => {
-      expect(document.querySelector('#settle-status')?.textContent)
-        .toContain('沒有網路連線')
-    })
-    const amount = document.querySelector<HTMLInputElement>('#settle-amount')!
-    const account = document.querySelector('#settle-account') as unknown as
-      HTMLSelectElement
-    const date = document.querySelector<HTMLInputElement>('#settle-date')!
-    expect(amount.disabled).toBe(true)
-    expect(account.disabled).toBe(true)
-    expect(date.disabled).toBe(true)
-    expect(document.querySelector<HTMLButtonElement>('#cancel-settle')?.disabled)
-      .toBe(true)
-
-    amount.value = '100'
-    account.value = '台新銀行'
-    date.value = '2026-07-28'
-    click('#confirm-settle')
-
-    await vi.waitFor(() => {
-      expect(apiMocks.settleReceivable).toHaveBeenCalledTimes(2)
-    })
-    expect(apiMocks.settleReceivable.mock.calls[1]).toEqual(
-      apiMocks.settleReceivable.mock.calls[0],
-    )
-  })
-
-  it('cannot cancel or open another settlement while a request is in flight', async () => {
-    const settlement = deferred<{
-      ok: true
-      alreadyRecorded: false
-    }>()
-    apiMocks.settleReceivable.mockReturnValueOnce(settlement.promise)
-    mount()
-    click('[data-view="outstanding"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
-    })
-    click('[data-settle-txn-id="receivable-open-001"]')
-    click('#confirm-settle')
-    await vi.waitFor(() => {
-      expect(apiMocks.settleReceivable).toHaveBeenCalledTimes(1)
-    })
-
-    const cancel = document.querySelector<HTMLButtonElement>('#cancel-settle')!
-    expect(cancel.disabled).toBe(true)
-    cancel.click()
-    click('[data-settle-txn-id="payable-open-001"]')
-    expect(document.querySelector('#settle-target')?.textContent)
-      .toContain('阿明')
-
-    settlement.resolve({ ok: true, alreadyRecorded: false })
-
-    await vi.waitFor(() => {
-      expect(apiMocks.listReceivables).toHaveBeenCalledTimes(2)
-    })
-    expect(document.querySelector<HTMLElement>('#settle-confirmation')?.hidden)
-      .toBe(true)
-  })
-
-  it('enables confirmation when options arrive after the dialog opens', async () => {
-    const refresh = deferred<typeof CACHED_OPTIONS>()
-    mount(null, refresh.promise)
-    click('[data-view="outstanding"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
-    })
-    click('[data-settle-txn-id="receivable-open-001"]')
-    const confirm = document.querySelector<HTMLButtonElement>('#confirm-settle')!
-    expect(confirm.disabled).toBe(true)
-
-    refresh.resolve(CACHED_OPTIONS)
-
-    await vi.waitFor(() => {
-      expect(confirm.disabled).toBe(false)
-    })
-    const account = document.querySelector('#settle-account') as unknown as
-      HTMLSelectElement
-    expect(account.value).toBe('錢包')
-  })
-})
-
-describe('visibility auth flow', () => {
-  it('visibilitychange triggers auth-check and an expired session surfaces re-auth', async () => {
-    // Under the 5-minute gate, onVisible immediately after startup is coalesced.
-    // Exercise the expired-session path via the startup check instead: startup
-    // check returns ok:false and surfaces the re-auth prompt directly.
-    apiMocks.authCheck.mockResolvedValueOnce({ ok: false })
-    mount()
-    await vi.waitFor(() => expect(apiMocks.authCheck).toHaveBeenCalledTimes(1))
-    expect(document.querySelector('#reauth-prompt')?.textContent).toContain('登入已過期')
-    expect(document.querySelector('#reauth-btn')).not.toBeNull()
-  })
-
-  it('visibility after the minimum interval triggers a gated auth-check', async () => {
-    // Resolve with a far-future session so the session stays live throughout
-    apiMocks.authCheck.mockResolvedValue({
-      ok: true,
-      exp: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
-    })
-
-    mount()
-
-    // Wait for the startup auth-check
-    await vi.waitFor(() => expect(apiMocks.authCheck).toHaveBeenCalledTimes(1))
-
-    // Three rapid visibilitychange events — all within the 5-minute gate
-    document.dispatchEvent(new Event('visibilitychange'))
-    document.dispatchEvent(new Event('visibilitychange'))
-    document.dispatchEvent(new Event('visibilitychange'))
-    // Flush any triggered microtasks
-    await new Promise<void>(resolve => setTimeout(resolve, 0))
-
-    expect(apiMocks.authCheck).toHaveBeenCalledTimes(1)
-
-    // Advance Date.now() past the 5-minute minimum check interval.
-    // We fake only Date (leaving setTimeout/microtasks real so vi.waitFor still works).
-    const realNow = Date.now()
-    try {
-      vi.useFakeTimers({ toFake: ['Date'] })
-      vi.setSystemTime(realNow + 301_000)
-
-      // One more visibilitychange — this one should pass the gate
-      document.dispatchEvent(new Event('visibilitychange'))
-
-      await vi.waitFor(() => expect(apiMocks.authCheck).toHaveBeenCalledTimes(2))
-    } finally {
-      vi.useRealTimers()
-    }
-
-    expect(document.querySelector('#reauth-prompt')).toBeNull()
-  })
-})
-
-describe('expired session during a write', () => {
-  const AUTH_FAILURE = { ok: false, kind: 'auth', message: '登入已過期' }
-
-  it('a failed 記帳 reports the expired session and offers re-login, not a network error', async () => {
-    apiMocks.submitTransaction.mockResolvedValueOnce(AUTH_FAILURE)
-    mount()
-    fillExpense()
-
-    click('#submit-btn')
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('#status-message')?.textContent)
-        .toContain('登入已過期')
-    })
-    expect(document.querySelector('#status-message')?.textContent)
-      .not.toContain('沒有網路連線')
-    expect(document.querySelector('#reauth-prompt')).not.toBeNull()
-    expect(document.querySelector('#reauth-btn')?.textContent).toBe('重新登入')
-  })
-
-  it('a failed 結清 reports the expired session and offers re-login', async () => {
-    apiMocks.settleReceivable.mockResolvedValueOnce(AUTH_FAILURE)
-    mount()
-    click('[data-view="outstanding"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-settle-txn-id="receivable-open-001"]'))
-        .not.toBeNull()
-    })
-    click('[data-settle-txn-id="receivable-open-001"]')
-
-    click('#confirm-settle')
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('#settle-status')?.textContent)
-        .toContain('登入已過期')
-    })
-    expect(document.querySelector('#reauth-prompt')).not.toBeNull()
-  })
-
-  it('a failed 沖銷 reports the expired session and offers re-login', async () => {
-    apiMocks.reverseTransaction.mockResolvedValueOnce(AUTH_FAILURE)
-    mount()
-    click('[data-view="recent"]')
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-reverse-txn-id="txn-recent"]'))
-        .not.toBeNull()
-    })
-    click('[data-reverse-txn-id="txn-recent"]')
-
-    click('#confirm-reverse')
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('#reverse-status')?.textContent)
-        .toContain('登入已過期')
-    })
-    expect(document.querySelector('#reauth-prompt')).not.toBeNull()
-  })
-
-  it('a genuine offline failure keeps the network message and offers no re-login prompt', async () => {
-    apiMocks.submitTransaction.mockResolvedValueOnce({
-      ok: false,
-      kind: 'network',
-      message: '沒有網路連線，請再試一次',
-    })
-    mount()
-    fillExpense()
-
-    click('#submit-btn')
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('#status-message')?.textContent)
-        .toContain('沒有網路連線')
-    })
-    expect(document.querySelector('#reauth-prompt')).toBeNull()
   })
 })

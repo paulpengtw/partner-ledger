@@ -1,16 +1,14 @@
 export type Transaction = {
-  type: '支出' | '收入' | '轉帳'
-  amount: number
   date: string
-  description: string
-  time?: string
-  account?: string
-  toAccount?: string
-  category?: string
+  amount: number
+  payer: string
+  split: '均分' | '全額對方' | '全額自己'
+  category: string
   payee?: string
-  currency?: string
-  iou?: '應收' | '應付'
 }
+
+export type Settlement = { date: string; amount: number; payer: string }
+export type Reversal = { txn_id: string; date: string }
 
 type ValidationResult =
   | { ok: true; transaction: Transaction }
@@ -20,35 +18,15 @@ type TransactionDateRangeValidationResult =
   | { ok: true; date_from: string; date_to: string }
   | { ok: false; error: string }
 
-export type Settlement = {
-  txn_id: string
-  account: string
-  date: string
-  amount?: number
-}
-
 type SettlementValidationResult =
   | { ok: true; settlement: Settlement }
   | { ok: false; error: string }
-
-export type Reversal = {
-  txn_id: string
-  date: string
-}
 
 type ReversalValidationResult =
   | { ok: true; reversal: Reversal }
   | { ok: false; error: string }
 
-const TYPES = new Set(['支出', '收入', '轉帳'])
-const IOU_TYPES = new Set(['應收', '應付'])
-const OPTIONAL_STRING_FIELDS = [
-  'account',
-  'toAccount',
-  'category',
-  'payee',
-  'currency',
-] as const
+const SPLITS = new Set(['均分', '全額對方', '全額自己'])
 
 export function isValidUuid(value: unknown): value is string {
   return typeof value === 'string'
@@ -108,50 +86,93 @@ export function validateTransactionDateRange(
   }
 }
 
-export function validateSettlement(input: unknown): SettlementValidationResult {
+export function validateTransaction(input: unknown): ValidationResult {
   if (typeof input !== 'object' || input === null) {
-    return { ok: false, error: 'invalid txn_id' }
+    return { ok: false, error: 'invalid transaction' }
   }
   const candidate = input as Record<string, unknown>
 
   if (
-    typeof candidate.txn_id !== 'string'
-    || candidate.txn_id.trim() === ''
+    typeof candidate.amount !== 'number'
+    || !Number.isFinite(candidate.amount)
+    || candidate.amount <= 0
   ) {
-    return { ok: false, error: 'invalid txn_id' }
-  }
-  if (
-    typeof candidate.account !== 'string'
-    || candidate.account.trim() === ''
-  ) {
-    return { ok: false, error: 'invalid account' }
+    return { ok: false, error: 'invalid amount' }
   }
   if (!isRealDate(candidate.date)) {
     return { ok: false, error: 'invalid date' }
   }
   if (
-    candidate.amount !== undefined
+    typeof candidate.payer !== 'string'
+    || candidate.payer.trim() === ''
+  ) {
+    return { ok: false, error: 'invalid payer' }
+  }
+  if (
+    typeof candidate.split !== 'string'
+    || !SPLITS.has(candidate.split)
+  ) {
+    return { ok: false, error: 'invalid split' }
+  }
+  if (
+    typeof candidate.category !== 'string'
+    || candidate.category.trim() === ''
+  ) {
+    return { ok: false, error: 'invalid category' }
+  }
+  if (
+    candidate.payee !== undefined
     && (
-      typeof candidate.amount !== 'number'
-      || !Number.isFinite(candidate.amount)
-      || candidate.amount <= 0
+      typeof candidate.payee !== 'string'
+      || candidate.payee.trim() === ''
     )
+  ) {
+    return { ok: false, error: 'invalid payee' }
+  }
+
+  const transaction: Transaction = {
+    date: candidate.date,
+    amount: candidate.amount,
+    payer: candidate.payer,
+    split: candidate.split as Transaction['split'],
+    category: candidate.category,
+  }
+  if (typeof candidate.payee === 'string') transaction.payee = candidate.payee
+
+  return { ok: true, transaction }
+}
+
+export function validateSettlement(input: unknown): SettlementValidationResult {
+  if (typeof input !== 'object' || input === null) {
+    return { ok: false, error: 'invalid settlement' }
+  }
+  const candidate = input as Record<string, unknown>
+
+  if (!isRealDate(candidate.date)) {
+    return { ok: false, error: 'invalid date' }
+  }
+  if (
+    typeof candidate.amount !== 'number'
+    || !Number.isFinite(candidate.amount)
+    || candidate.amount <= 0
   ) {
     return { ok: false, error: 'invalid amount' }
   }
-  if (candidate.currency !== undefined) {
-    return { ok: false, error: 'currency is not accepted' }
+  if (
+    typeof candidate.payer !== 'string'
+    || candidate.payer.trim() === ''
+  ) {
+    return { ok: false, error: 'invalid payer' }
   }
 
-  const settlement: Settlement = {
-    txn_id: candidate.txn_id,
-    account: candidate.account,
-    date: candidate.date,
+  return {
+    ok: true,
+    settlement: {
+      date: candidate.date,
+      amount: candidate.amount,
+      payer: candidate.payer,
+    },
   }
-  if (typeof candidate.amount === 'number') {
-    settlement.amount = candidate.amount
-  }
-  return { ok: true, settlement }
 }
 
 export function validateReversal(input: unknown): ReversalValidationResult {
@@ -169,9 +190,6 @@ export function validateReversal(input: unknown): ReversalValidationResult {
   if (!isRealDate(candidate.date)) {
     return { ok: false, error: 'invalid date' }
   }
-  if (candidate.currency !== undefined) {
-    return { ok: false, error: 'currency is not accepted' }
-  }
 
   return {
     ok: true,
@@ -180,99 +198,4 @@ export function validateReversal(input: unknown): ReversalValidationResult {
       date: candidate.date,
     },
   }
-}
-
-function isRealTime(value: unknown): value is string {
-  if (typeof value !== 'string') return false
-  const match = /^(\d{2}):(\d{2})$/.exec(value)
-  if (!match) return false
-
-  const hours = Number(match[1])
-  const minutes = Number(match[2])
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
-}
-
-export function validateTransaction(input: unknown): ValidationResult {
-  if (typeof input !== 'object' || input === null) {
-    return { ok: false, error: 'invalid transaction' }
-  }
-  const candidate = input as Record<string, unknown>
-
-  if (typeof candidate.type !== 'string' || !TYPES.has(candidate.type)) {
-    return { ok: false, error: 'invalid type' }
-  }
-  if (
-    typeof candidate.amount !== 'number'
-    || !Number.isFinite(candidate.amount)
-    || candidate.amount <= 0
-  ) {
-    return { ok: false, error: 'invalid amount' }
-  }
-  if (!isRealDate(candidate.date)) {
-    return { ok: false, error: 'invalid date' }
-  }
-  if (candidate.time !== undefined && !isRealTime(candidate.time)) {
-    return { ok: false, error: 'invalid time' }
-  }
-  if (
-    typeof candidate.description !== 'string'
-    || candidate.description.trim() === ''
-  ) {
-    return { ok: false, error: 'missing description' }
-  }
-
-  if (
-    candidate.iou !== undefined
-    && (
-      typeof candidate.iou !== 'string'
-      || !IOU_TYPES.has(candidate.iou)
-    )
-  ) {
-    return { ok: false, error: 'invalid iou' }
-  }
-  if (
-    candidate.iou !== undefined
-    && (
-      typeof candidate.payee !== 'string'
-      || candidate.payee.trim() === ''
-    )
-  ) {
-    return { ok: false, error: 'missing payee' }
-  }
-
-  for (const field of OPTIONAL_STRING_FIELDS) {
-    const value = candidate[field]
-    if (
-      value !== undefined
-      && (typeof value !== 'string' || value.trim() === '')
-    ) {
-      return { ok: false, error: `invalid ${field}` }
-    }
-  }
-
-  const transaction: Transaction = {
-    type: candidate.type as Transaction['type'],
-    amount: candidate.amount,
-    date: candidate.date,
-    description: candidate.description,
-  }
-  if (typeof candidate.time === 'string') transaction.time = candidate.time
-  if (typeof candidate.account === 'string') {
-    transaction.account = candidate.account
-  }
-  if (typeof candidate.toAccount === 'string') {
-    transaction.toAccount = candidate.toAccount
-  }
-  if (typeof candidate.category === 'string') {
-    transaction.category = candidate.category
-  }
-  if (typeof candidate.payee === 'string') transaction.payee = candidate.payee
-  if (typeof candidate.currency === 'string') {
-    transaction.currency = candidate.currency
-  }
-  if (typeof candidate.iou === 'string') {
-    transaction.iou = candidate.iou as Transaction['iou']
-  }
-
-  return { ok: true, transaction }
 }

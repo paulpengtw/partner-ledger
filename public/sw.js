@@ -1,4 +1,4 @@
-const CACHE_NAME = 'solo-ledger-shell-v1'
+const CACHE_NAME = 'partner-ledger-shell-v1'
 const APP_SHELL = ['/', '/manifest.webmanifest']
 
 self.addEventListener('install', event => {

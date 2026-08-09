@@ -3,31 +3,6 @@ import { createHash, createHmac } from 'node:crypto'
 import { Buffer } from 'node:buffer'
 import { fileURLToPath } from 'node:url'
 
-export type PostingInput = Record<string, unknown>
-
-export type PostingRow = {
-  日期: string
-  時間: string
-  類型: string
-  借方帳戶: string
-  貸方帳戶: string
-  金額: number
-  幣別: string
-  分類: string
-  交易對象: string
-  說明: string
-  結清狀態: string
-  沖銷txn_id: string
-  txn_id: string
-  來源: string
-  建立時間: string
-}
-
-type GasFunctions = {
-  expandPosting_: (input: PostingInput) => PostingRow
-  resolveHeaders_: (headerRow: unknown[], requiredHeaders: string[]) => Record<string, number>
-  JOURNAL_HEADERS: string[]
-}
 
 const gasGlobalNames = [
   'SpreadsheetApp',
@@ -74,7 +49,32 @@ function throwingGasGlobal(name: string): object {
   })
 }
 
-export function loadGasFunctions(): GasFunctions {
+
+export type EntryInput = Record<string, unknown>
+
+export type EntryRow = {
+  txn_id: string
+  日期: string
+  金額: number
+  付款人: string
+  分攤方式: string
+  分類: string
+  交易對象: string
+  記帳人: string
+  來源: string
+  沖銷txn_id: string
+}
+
+type EntryGasFunctions = {
+  expandEntry_: (input: EntryInput) => EntryRow
+  computePayables_: (rows: Array<Record<string, unknown>>, partners: string[]) => {
+    directions: Array<{ debtor: string; creditor: string; outstanding: number }>
+  }
+  resolveHeaders_: (headerRow: unknown[], requiredHeaders: string[]) => Record<string, number>
+  ENTRY_HEADERS: string[]
+}
+
+export function loadEntryFunctions(): EntryGasFunctions {
   const codePath = fileURLToPath(new URL('../../apps-script/Code.gs', import.meta.url))
   const source = readFileSync(codePath, 'utf8')
   const evaluate = new Function(
@@ -82,18 +82,22 @@ export function loadGasFunctions(): GasFunctions {
     [
       '"use strict";',
       source,
-      'if (typeof expandPosting_ !== "function") {',
-      '  throw new Error("expandPosting_ is not declared in apps-script/Code.gs");',
+      'if (typeof expandEntry_ !== "function") {',
+      '  throw new Error("expandEntry_ is not declared in apps-script/Code.gs");',
+      '}',
+      'if (typeof computePayables_ !== "function") {',
+      '  throw new Error("computePayables_ is not declared in apps-script/Code.gs");',
       '}',
       'return {',
-      '  expandPosting_: expandPosting_,',
+      '  expandEntry_: expandEntry_,',
+      '  computePayables_: computePayables_,',
       '  resolveHeaders_: typeof resolveHeaders_ === "function" ? resolveHeaders_ : undefined,',
-      '  JOURNAL_HEADERS: typeof JOURNAL_HEADERS !== "undefined" ? JOURNAL_HEADERS : undefined,',
+      '  ENTRY_HEADERS: typeof ENTRY_HEADERS !== "undefined" ? ENTRY_HEADERS : undefined,',
       '};',
     ].join('\n'),
   )
 
-  return evaluate(...gasGlobalNames.map(throwingGasGlobal)) as GasFunctions
+  return evaluate(...gasGlobalNames.map(throwingGasGlobal)) as EntryGasFunctions
 }
 
 type CellValue = unknown
@@ -321,18 +325,12 @@ export class FakeSheet {
   }
 
   afterSetValues(
-    row: number,
-    column: number,
-    numRows: number,
-    numColumns: number,
+    _row: number,
+    _column: number,
+    _numRows: number,
+    _numColumns: number,
   ): void {
-    if (this.name === '日記帳' && row >= 2) {
-      const isStatusCell =
-        numRows === 1
-        && numColumns === 1
-        && this.readValue(1, column) === '結清狀態'
-      this.recordEvent(isStatusCell ? 'status-written' : 'row-written')
-    }
+    // no-op: event recording removed with double-entry model
   }
 }
 
@@ -347,7 +345,7 @@ export class FakeSpreadsheet {
   private readonly recordEvent: (event: string) => void
 
   getName(): string {
-    return 'Solo Ledger'
+    return 'Partner Ledger'
   }
 
   getSheetByName(name: string): FakeSheet | null {
@@ -458,7 +456,7 @@ export class FakeDrive {
   private nextFileId = 1
 
   constructor(spreadsheetId: string) {
-    this.createFile('Solo Ledger', new Date(0), null, spreadsheetId)
+    this.createFile('Partner Ledger', new Date(0), null, spreadsheetId)
   }
 
   createFolder(name: string): FakeDriveFolder {
@@ -559,12 +557,9 @@ export type FakeDoPostEvent = {
   }
 }
 
-type SetupGasFunctions = Pick<GasFunctions, 'resolveHeaders_' | 'JOURNAL_HEADERS'> & {
+type SetupGasFunctions = {
   setupSpreadsheet: () => void
-  closeAndOpenBooks: (oldSpreadsheetId: string) => Record<string, unknown>
   doPost: (event: FakeDoPostEvent) => FakeTextOutput
-  checkConsistency_: (payload?: { repair?: boolean }) => Record<string, unknown>
-  weeklyConsistencyCheck: () => Record<string, unknown>
   weeklyBackup: () => Record<string, unknown>
   pruneBackups_: (
     folder: FakeDriveFolder,
@@ -576,9 +571,7 @@ type SetupGasFunctions = Pick<GasFunctions, 'resolveHeaders_' | 'JOURNAL_HEADERS
 
 export type FakeGasHarness = SetupGasFunctions & {
   spreadsheet: FakeSpreadsheet
-  oldSpreadsheet: FakeSpreadsheet
   spreadsheetId: string
-  oldSpreadsheetId: string
   drive: FakeDrive
   mailMessages: FakeMailMessage[]
   triggers: FakeTrigger[]
@@ -596,12 +589,9 @@ export function loadGasFunctionsWithFakeGas(): FakeGasHarness {
   const events: string[] = []
   const recordEvent = (event: string) => events.push(event)
   const spreadsheetId = 'test-ledger-spreadsheet-id'
-  const oldSpreadsheetId = 'test-old-ledger-spreadsheet-id'
   const spreadsheet = new FakeSpreadsheet(recordEvent)
-  const oldSpreadsheet = new FakeSpreadsheet(recordEvent)
   const spreadsheets = new Map<string, FakeSpreadsheet>([
     [spreadsheetId, spreadsheet],
-    [oldSpreadsheetId, oldSpreadsheet],
   ])
   const drive = new FakeDrive(spreadsheetId)
   const mailMessages: FakeMailMessage[] = []
@@ -809,15 +799,10 @@ export function loadGasFunctionsWithFakeGas(): FakeGasHarness {
       source,
       'return {',
       '  setupSpreadsheet: typeof setupSpreadsheet === "function" ? setupSpreadsheet : undefined,',
-      '  closeAndOpenBooks: typeof closeAndOpenBooks === "function" ? closeAndOpenBooks : undefined,',
       '  doPost: typeof doPost === "function" ? doPost : undefined,',
-      '  checkConsistency_: typeof checkConsistency_ === "function" ? checkConsistency_ : undefined,',
-      '  weeklyConsistencyCheck: typeof weeklyConsistencyCheck === "function" ? weeklyConsistencyCheck : undefined,',
       '  weeklyBackup: typeof weeklyBackup === "function" ? weeklyBackup : undefined,',
       '  pruneBackups_: typeof pruneBackups_ === "function" ? pruneBackups_ : undefined,',
       '  installWeeklyTriggers: typeof installWeeklyTriggers === "function" ? installWeeklyTriggers : undefined,',
-      '  resolveHeaders_: typeof resolveHeaders_ === "function" ? resolveHeaders_ : undefined,',
-      '  JOURNAL_HEADERS: typeof JOURNAL_HEADERS !== "undefined" ? JOURNAL_HEADERS : undefined,',
       '};',
     ].join('\n'),
   )
@@ -859,9 +844,7 @@ export function loadGasFunctionsWithFakeGas(): FakeGasHarness {
   return {
     ...functions,
     spreadsheet,
-    oldSpreadsheet,
     spreadsheetId,
-    oldSpreadsheetId,
     drive,
     mailMessages,
     triggers,

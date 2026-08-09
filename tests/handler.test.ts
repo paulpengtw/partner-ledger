@@ -16,16 +16,14 @@ const env: Env = {
 }
 const NOW = 1_700_000_000
 const KEY = '3b241101-e2bb-4255-8caf-4136c566a962'
+const EMAIL = 'azhe@example.com'
 const transaction = {
-  type: '支出',
-  amount: 260,
-  date: '2026-07-26',
-  time: '18:30',
-  description: '晚餐',
-  account: '巷口郵局',
-  category: '天外飛來一筆',
-  payee: '月球雜貨店',
-  currency: '銀河幣',
+  date: '2026-08-09',
+  amount: 300,
+  payer: '小語',
+  split: '均分',
+  category: '餐飲',
+  payee: '全聯',
 } as const
 
 let jwks: JWTVerifyGetKey
@@ -46,12 +44,17 @@ beforeAll(async () => {
   cookie = `CF_Authorization=${token}`
 })
 
-function req(body: unknown, authCookie: string | null = cookie): Request {
+function req(
+  body: unknown,
+  authCookie: string | null = cookie,
+  email: string | null = EMAIL,
+): Request {
   return new Request('https://pwa.example/api/x', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(authCookie === null ? {} : { cookie: authCookie }),
+      ...(email === null ? {} : { 'Cf-Access-Authenticated-User-Email': email }),
     },
     body: JSON.stringify(body),
   })
@@ -93,11 +96,11 @@ describe('handleAction', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('returns 403 for an action outside the issue allowlist', async () => {
+  it('returns 403 for a retired action outside the allowlist', async () => {
     const fetchFn = noFetch()
 
     const response = await handleAction(
-      'closeAndOpenBooks',
+      'list_receivables',
       req({}),
       env,
       deps(fetchFn),
@@ -123,7 +126,7 @@ describe('handleAction', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('returns a structural 400 without contacting Apps Script', async () => {
+  it('returns a structural 400 for an invalid amount without contacting Apps Script', async () => {
     const fetchFn = noFetch()
 
     const response = await handleAction(
@@ -141,24 +144,21 @@ describe('handleAction', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('returns 400 naming payee for an iou without contacting Apps Script', async () => {
-    const { payee: _payee, ...withoutPayee } = transaction
-    const fetchFn = vi.fn(async () =>
-      new Response('{"ok":true}', { status: 200 }),
-    ) as unknown as typeof fetch
+  it('returns a structural 400 for an invalid split without contacting Apps Script', async () => {
+    const fetchFn = noFetch()
 
     const response = await handleAction(
       'create_transaction',
       req({
         idempotencyKey: KEY,
-        transaction: { ...withoutPayee, iou: '應收' },
+        transaction: { ...transaction, split: '三七分' },
       }),
       env,
       deps(fetchFn),
     )
 
     expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ ok: false, error: 'missing payee' })
+    expect(await response.json()).toEqual({ ok: false, error: 'invalid split' })
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
@@ -177,6 +177,7 @@ describe('handleAction', () => {
       expect(decodePayload(envelope.payload)).toEqual({
         action: 'create_transaction',
         idempotencyKey: KEY,
+        userEmail: EMAIL,
         transaction,
       })
       return new Response(upstreamBody, { status: 201 })
@@ -194,8 +195,37 @@ describe('handleAction', () => {
     expect(await response.text()).toBe(upstreamBody)
   })
 
+  it('stamps the Access email and drops spoofed body email fields', async () => {
+    const upstreamBody = '{"ok":true}'
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const envelope = JSON.parse(String(init?.body)) as { payload: string }
+
+      expect(decodePayload(envelope.payload)).toEqual({
+        action: 'create_transaction',
+        idempotencyKey: KEY,
+        userEmail: EMAIL,
+        transaction,
+      })
+      return new Response(upstreamBody, { status: 200 })
+    }) as unknown as typeof fetch
+
+    const response = await handleAction(
+      'create_transaction',
+      req({
+        idempotencyKey: KEY,
+        userEmail: 'spoof@example.com',
+        transaction: { ...transaction, userEmail: 'spoof@example.com' },
+      }),
+      env,
+      deps(fetchFn),
+    )
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(response.status).toBe(200)
+  })
+
   it('forwards a GAS error body and status byte-for-byte without rewrapping', async () => {
-    const gasErrorBody = '{"ok":false,"error":"unknown or disabled account: 幽靈錢包"}'
+    const gasErrorBody = '{"ok":false,"error":"unknown or disabled category: 餐飲"}'
     const fetchFn = vi.fn(async () =>
       new Response(gasErrorBody, { status: 200 }),
     ) as unknown as typeof fetch
@@ -240,6 +270,24 @@ describe('handleAction', () => {
     expect(await response.text()).toBe(upstreamBody)
   })
 
+  it('allows health without the Access email header', async () => {
+    const upstreamBody = '{"ok":true}'
+    const fetchFn = vi.fn(async () =>
+      new Response(upstreamBody, { status: 200 }),
+    ) as unknown as typeof fetch
+
+    const response = await handleAction(
+      'health',
+      req({}, cookie, null),
+      env,
+      deps(fetchFn),
+    )
+
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(upstreamBody)
+  })
+
   it('uses a random nonce for list_transactions and forwards the upstream response verbatim', async () => {
     const upstreamBody = '[{"txn_id":"","日期":"2026-07-27","金額":"000260.00"}]'
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -272,44 +320,8 @@ describe('handleAction', () => {
     expect(await response.text()).toBe(upstreamBody)
   })
 
-  it('uses a random nonce for list_receivables and forwards the upstream response verbatim', async () => {
-    const upstreamBody = '[{"交易對象":"阿明","entries":[]}]'
-    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-      const envelope = JSON.parse(String(init?.body)) as {
-        nonce: string
-        payload: string
-      }
-
-      expect(envelope.nonce).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      )
-      expect(envelope.nonce).not.toBe(KEY)
-      expect(decodePayload(envelope.payload)).toEqual({
-        action: 'list_receivables',
-      })
-      return new Response(upstreamBody, { status: 206 })
-    }) as unknown as typeof fetch
-
-    const response = await handleAction(
-      'list_receivables',
-      req({}),
-      env,
-      deps(fetchFn),
-    )
-
-    expect(fetchFn).toHaveBeenCalledTimes(1)
-    expect(response.status).toBe(206)
-    expect(await response.text()).toBe(upstreamBody)
-  })
-
-  it('uses the client idempotency key as settle nonce and sends only the settlement contract', async () => {
+  it('uses the client idempotency key as settle nonce and sends the stamped settlement contract', async () => {
     const upstreamBody = '{"ok":true,"txn_id":"settle-1","row":42}'
-    const settlement = {
-      txn_id: 'original-1',
-      account: '任意發明的銀行',
-      date: '2026-07-27',
-      amount: 125.5,
-    }
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       const envelope = JSON.parse(String(init?.body)) as {
         nonce: string
@@ -320,14 +332,22 @@ describe('handleAction', () => {
       expect(decodePayload(envelope.payload)).toEqual({
         action: 'settle',
         idempotencyKey: KEY,
-        ...settlement,
+        userEmail: EMAIL,
+        date: '2026-08-09',
+        amount: 125.5,
+        payer: '阿哲',
       })
       return new Response(upstreamBody, { status: 201 })
     }) as unknown as typeof fetch
 
     const response = await handleAction(
       'settle',
-      req({ idempotencyKey: KEY, ...settlement }),
+      req({
+        idempotencyKey: KEY,
+        date: '2026-08-09',
+        amount: 125.5,
+        payer: '阿哲',
+      }),
       env,
       deps(fetchFn),
     )
@@ -337,44 +357,28 @@ describe('handleAction', () => {
     expect(await response.text()).toBe(upstreamBody)
   })
 
-  it('allows settle amount to be omitted', async () => {
-    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-      const envelope = JSON.parse(String(init?.body)) as {
-        payload: string
-      }
-
-      expect(decodePayload(envelope.payload)).toEqual({
-        action: 'settle',
-        idempotencyKey: KEY,
-        txn_id: 'original-1',
-        account: '銀行',
-        date: '2026-07-27',
-      })
-      return new Response('{"ok":true}', { status: 200 })
-    }) as unknown as typeof fetch
+  it.each([
+    ['blank payer', { idempotencyKey: KEY, date: '2026-08-09', amount: 125.5, payer: ' ' }, 'invalid payer'],
+    ['missing amount', { idempotencyKey: KEY, date: '2026-08-09', payer: '阿哲' }, 'invalid amount'],
+    ['impossible date', { idempotencyKey: KEY, date: '2026-02-30', amount: 125.5, payer: '阿哲' }, 'invalid date'],
+    ['non-UUID idempotencyKey', { idempotencyKey: 'not-a-uuid', date: '2026-08-09', amount: 125.5, payer: '阿哲' }, 'invalid idempotency key'],
+  ])('rejects settle with %s before contacting Apps Script', async (_label, body, error) => {
+    const fetchFn = noFetch()
 
     const response = await handleAction(
       'settle',
-      req({
-        idempotencyKey: KEY,
-        txn_id: 'original-1',
-        account: '銀行',
-        date: '2026-07-27',
-      }),
+      req(body),
       env,
       deps(fetchFn),
     )
 
-    expect(response.status).toBe(200)
-    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ ok: false, error })
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('uses the client idempotency key as reverse_transaction nonce and sends only the reversal contract', async () => {
+  it('uses the client idempotency key as reverse_transaction nonce and sends the stamped reversal contract', async () => {
     const upstreamBody = '{"ok":true,"txn_id":"reverse-1","row":42}'
-    const reversal = {
-      txn_id: 'original-1',
-      date: '2026-07-27',
-    }
     const fetchFn = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       const envelope = JSON.parse(String(init?.body)) as {
         nonce: string
@@ -385,14 +389,20 @@ describe('handleAction', () => {
       expect(decodePayload(envelope.payload)).toEqual({
         action: 'reverse_transaction',
         idempotencyKey: KEY,
-        ...reversal,
+        userEmail: EMAIL,
+        txn_id: 'original-1',
+        date: '2026-08-09',
       })
       return new Response(upstreamBody, { status: 201 })
     }) as unknown as typeof fetch
 
     const response = await handleAction(
       'reverse_transaction',
-      req({ idempotencyKey: KEY, ...reversal }),
+      req({
+        idempotencyKey: KEY,
+        txn_id: 'original-1',
+        date: '2026-08-09',
+      }),
       env,
       deps(fetchFn),
     )
@@ -403,39 +413,15 @@ describe('handleAction', () => {
   })
 
   it.each([
-    ['blank txn_id', { txn_id: ' ', date: '2026-07-27' }, 'invalid txn_id'],
-    ['impossible date', { txn_id: 'original-1', date: '2026-02-30' }, 'invalid date'],
-    ['non-UUID key', { idempotencyKey: 'not-a-uuid', txn_id: 'original-1', date: '2026-07-27' }, 'invalid idempotency key'],
-    ['currency input', { txn_id: 'original-1', date: '2026-07-27', currency: 'USD' }, 'currency is not accepted'],
+    ['blank txn_id', { idempotencyKey: KEY, txn_id: ' ', date: '2026-08-09' }, 'invalid txn_id'],
+    ['impossible date', { idempotencyKey: KEY, txn_id: 'original-1', date: '2026-02-30' }, 'invalid date'],
+    ['non-UUID idempotencyKey', { idempotencyKey: 'not-a-uuid', txn_id: 'original-1', date: '2026-08-09' }, 'invalid idempotency key'],
   ])('rejects reverse_transaction with %s before contacting Apps Script', async (_label, body, error) => {
     const fetchFn = noFetch()
 
     const response = await handleAction(
       'reverse_transaction',
-      req({ idempotencyKey: KEY, ...body }),
-      env,
-      deps(fetchFn),
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({ ok: false, error })
-    expect(fetchFn).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    ['blank txn_id', { txn_id: ' ', account: '銀行', date: '2026-07-27' }, 'invalid txn_id'],
-    ['blank account', { txn_id: 'original-1', account: '', date: '2026-07-27' }, 'invalid account'],
-    ['impossible date', { txn_id: 'original-1', account: '銀行', date: '2026-02-30' }, 'invalid date'],
-    ['zero amount', { txn_id: 'original-1', account: '銀行', date: '2026-07-27', amount: 0 }, 'invalid amount'],
-    ['infinite amount', { txn_id: 'original-1', account: '銀行', date: '2026-07-27', amount: Infinity }, 'invalid amount'],
-    ['non-UUID key', { idempotencyKey: 'not-a-uuid', txn_id: 'original-1', account: '銀行', date: '2026-07-27' }, 'invalid idempotency key'],
-    ['currency input', { txn_id: 'original-1', account: '銀行', date: '2026-07-27', currency: 'USD' }, 'currency is not accepted'],
-  ])('rejects settle with %s before contacting Apps Script', async (_label, body, error) => {
-    const fetchFn = noFetch()
-
-    const response = await handleAction(
-      'settle',
-      req({ idempotencyKey: KEY, ...body }),
+      req(body),
       env,
       deps(fetchFn),
     )
@@ -508,4 +494,36 @@ describe('handleAction', () => {
     expect(response.status).toBe(203)
     expect(await response.text()).toBe(upstreamBody)
   })
+
+  it.each(['create_transaction', 'settle', 'reverse_transaction'] as const)(
+    'returns 401 for %s without an Access email header and without contacting Apps Script',
+    async action => {
+      const validBodyForAction = action === 'create_transaction'
+        ? { idempotencyKey: KEY, transaction }
+        : action === 'settle'
+          ? {
+            idempotencyKey: KEY,
+            date: '2026-08-09',
+            amount: 125.5,
+            payer: '阿哲',
+          }
+          : {
+            idempotencyKey: KEY,
+            txn_id: 'original-1',
+            date: '2026-08-09',
+          }
+      const fetchFn = noFetch()
+
+      const response = await handleAction(
+        action,
+        req(validBodyForAction, cookie, null),
+        env,
+        deps(fetchFn),
+      )
+
+      expect(response.status).toBe(401)
+      expect(await response.json()).toEqual({ ok: false, error: 'unauthorized' })
+      expect(fetchFn).not.toHaveBeenCalled()
+    },
+  )
 })

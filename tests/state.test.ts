@@ -1,287 +1,221 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
+  amountValue,
   beginSubmit,
   buildTransaction,
   canSubmit,
   goBack,
   goNext,
-  jumpFromConfirm,
   initialState,
+  jumpFromConfirm,
   jumpTo,
   pressKey,
-  postingLegs,
+  previewEffect,
   resetForNext,
-  selectAccount,
   selectCategory,
-  selectToAccount,
-  setDescription,
-  setIou,
+  selectPayer,
+  selectSplit,
   setCounterparty,
-  setType,
+  setDate,
   stepSequence,
   submitFailed,
+  submitSucceeded,
   type FormState,
 } from '../src/state'
 
-function filledExpense(): FormState {
-  let state = initialState('2026-07-27')
-  for (const key of ['2', '6', '0']) state = pressKey(state, key)
-  state = selectAccount(state, '錢包')
-  state = selectCategory(state, '餐飲')
-  state = setDescription(state, '晚餐')
+const DATE = '2026-07-27'
+const PARTNERS = ['阿哲', '小語']
+
+function amountState(amount: string): FormState {
+  let state = initialState(DATE)
+  for (const key of amount) state = pressKey(state, key)
   return state
 }
 
-describe('per-type field guards', () => {
-  it('clears a stale category and counterparty when 支出 changes to 轉帳', () => {
-    let state = setCounterparty(filledExpense(), '全聯')
+function submitReady(): FormState {
+  let state = amountState('300')
+  state = selectPayer(state, '小語')
+  state = selectSplit(state, '均分')
+  state = selectCategory(state, '餐飲')
+  state = setCounterparty(state, '全聯')
+  return state
+}
 
-    state = setType(state, '轉帳')
-
-    expect(state.category).toBeNull()
-    expect(state.counterparty).toBe('')
+describe('fresh form and wizard navigation', () => {
+  it('preselects 均分 on a fresh form', () => {
+    expect(initialState(DATE)).toMatchObject({
+      step: 'amount',
+      split: '均分',
+      payer: null,
+      category: null,
+    })
   })
 
-  it('clears a stale toAccount when 轉帳 changes to 支出', () => {
-    let state = setType(initialState('2026-07-27'), '轉帳')
-    state = selectToAccount(state, '台新銀行')
+  it('walks amount to payer to split to details to confirm', () => {
+    let state = initialState(DATE)
+    expect(stepSequence()).toEqual(['amount', 'payer', 'split', 'details', 'confirm'])
 
-    state = setType(state, '支出')
-
-    expect(state.toAccount).toBeNull()
-  })
-
-  it.each(['收入', '轉帳'] as const)(
-    'clears iou when 支出 changes to %s',
-    type => {
-      let state = setIou(filledExpense(), '應付')
-
-      state = setType(state, type)
-
-      expect(state.iou).toBeNull()
-    },
-  )
-})
-
-describe('entry steps', () => {
-  it.each([
-    ['支出', ['amount', 'account', 'category', 'counterparty', 'details', 'confirm']],
-    ['收入', ['amount', 'account', 'category', 'counterparty', 'details', 'confirm']],
-    ['轉帳', ['amount', 'account', 'toAccount', 'details', 'confirm']],
-  ] as const)('derives the %s step sequence', (type, expected) => {
-    const state = setType(initialState('2026-07-27'), type)
-
-    expect(stepSequence(state)).toEqual(expected)
-  })
-
-  it('omits category for a 支出 with 應收', () => {
-    const state = setIou(initialState('2026-07-27'), '應收')
-
-    expect(stepSequence(state)).toEqual([
-      'amount',
-      'account',
-      'counterparty',
-      'details',
-      'confirm',
-    ])
-  })
-
-  it('clamps next and back navigation at both ends', () => {
-    const initial = initialState('2026-07-27')
-    const confirm = jumpTo(initial, 'confirm')
-
-    expect(goBack(initial)).toEqual(initial)
-    expect(goNext(confirm)).toEqual(confirm)
-    expect(goNext(jumpTo(initial, 'account')).step).toBe('category')
-    expect(goBack(jumpTo(initial, 'account')).step).toBe('amount')
-  })
-
-  it('preserves submission state while navigating', () => {
-    const state: FormState = {
-      ...jumpTo(initialState('2026-07-27'), 'account'),
-      status: 'error',
-      errorMessage: '連線失敗',
-      idempotencyKey: 'uuid-1',
+    const steps = [state.step]
+    for (let index = 0; index < 4; index += 1) {
+      state = goNext(state)
+      steps.push(state.step)
     }
 
-    expect(goNext(state)).toMatchObject({
-      step: 'category',
-      status: 'error',
-      errorMessage: '連線失敗',
-      idempotencyKey: 'uuid-1',
-    })
+    expect(steps).toEqual(['amount', 'payer', 'split', 'details', 'confirm'])
+    expect(goNext(state)).toEqual(state)
+    expect(goBack(state).step).toBe('details')
   })
 
-  it('ignores a jump to a step outside the current sequence', () => {
-    const state = setType(initialState('2026-07-27'), '轉帳')
+  it('selectPayer and selectSplit set their values and advance one step', () => {
+    const afterPayer = selectPayer(goNext(initialState(DATE)), '小語')
+    expect(afterPayer).toMatchObject({ payer: '小語', step: 'split' })
 
-    expect(jumpTo(state, 'category')).toEqual(state)
+    const afterSplit = selectSplit(afterPayer, '全額對方')
+    expect(afterSplit).toMatchObject({ split: '全額對方', step: 'details' })
   })
 
-  it('falls back to amount when changing type invalidates category', () => {
-    const state = jumpTo(initialState('2026-07-27'), 'category')
+  it('returns to confirm after selecting a payer while editing from confirm', () => {
+    const confirm = jumpTo(submitReady(), 'confirm')
+    const editing = jumpFromConfirm(confirm, 'payer')
 
-    expect(setType(state, '轉帳').step).toBe('amount')
-  })
+    expect(editing).toMatchObject({ step: 'payer', returnToConfirm: true })
 
-  it('resets the next entry at the amount step', () => {
-    const state = jumpTo(
-      setType(initialState('2026-07-27'), '轉帳'),
-      'toAccount',
-    )
-
-    const reset = resetForNext(state, '2026-07-28')
-    expect(reset.step).toBe('amount')
-    expect(reset.returnToConfirm).toBe(false)
-  })
-
-  it('returns to confirm after a valid edit and keeps the flag through invalid edits', () => {
-    const confirm = jumpTo(filledExpense(), 'confirm')
-    const editing = jumpFromConfirm(confirm, 'category')
-
-    expect(editing).toMatchObject({
-      step: 'category',
-      returnToConfirm: true,
-    })
-    expect(goNext(editing)).toMatchObject({
+    const selected = selectPayer(editing, '阿哲')
+    expect(selected).toMatchObject({
+      payer: '阿哲',
       step: 'confirm',
       returnToConfirm: false,
     })
-
-    const invalid = setDescription(editing, '   ')
-    expect(goNext(invalid)).toMatchObject({
-      step: 'counterparty',
-      returnToConfirm: true,
-    })
-    expect(goBack(invalid).returnToConfirm).toBe(true)
   })
 })
 
-describe('posting legs', () => {
-  it('maps each transaction type and IOU mode to debit and credit legs', () => {
-    const expense = filledExpense()
-    const income = setType(expense, '收入')
-    const transfer = selectToAccount(setType(expense, '轉帳'), '台新銀行')
-    const receivable = setCounterparty(setIou(expense, '應收'), '阿明')
-    const payable = setCounterparty(setIou(expense, '應付'), '阿明')
+describe('derived preview', () => {
+  it('derives a half share for 300 均分 paid by 小語', () => {
+    const state = selectPayer(amountState('300'), '小語')
 
-    expect(postingLegs(expense)).toEqual({
-      debit: '餐飲',
-      credit: '錢包',
+    expect(previewEffect(state, PARTNERS)).toEqual({
+      debtor: '阿哲',
+      creditor: '小語',
+      amount: 150,
     })
-    expect(postingLegs(income)).toEqual({
-      debit: '錢包',
-      credit: '餐飲',
+  })
+
+  it('keeps odd 均分 amounts exact to the half dollar', () => {
+    const state = selectPayer(amountState('101'), '小語')
+
+    expect(previewEffect(state, PARTNERS)).toEqual({
+      debtor: '阿哲',
+      creditor: '小語',
+      amount: 50.5,
     })
-    expect(postingLegs(transfer)).toEqual({
-      debit: '台新銀行',
-      credit: '錢包',
+  })
+
+  it.each([
+    ['全額對方', 300],
+    ['全額自己', 0],
+  ] as const)('derives %s as %s for the payer', (split, amount) => {
+    let state = selectPayer(amountState('300'), '小語')
+    state = selectSplit(state, split)
+
+    expect(previewEffect(state, PARTNERS)).toEqual({
+      debtor: '阿哲',
+      creditor: '小語',
+      amount,
     })
-    expect(postingLegs(receivable)).toEqual({
-      debit: '應收帳款',
-      credit: '錢包',
-    })
-    expect(postingLegs(payable)).toEqual({
-      debit: '餐飲',
-      credit: '應付帳款',
-    })
+  })
+
+  it('returns null before a payer is chosen', () => {
+    expect(previewEffect(amountState('300'), PARTNERS)).toBeNull()
   })
 })
 
-describe('submit gating and payload construction', () => {
-  it('blocks submit when the required 說明 is empty or whitespace', () => {
-    expect(canSubmit(setDescription(filledExpense(), ''))).toBe(false)
-    expect(canSubmit(setDescription(filledExpense(), ' \n\t '))).toBe(false)
+describe('submit gating and transaction construction', () => {
+  it('requires a positive amount, payer, category, and YYYY-MM-DD date', () => {
+    const ready = submitReady()
+
+    expect(canSubmit(ready)).toBe(true)
+    expect(canSubmit(initialState(DATE))).toBe(false)
+    expect(canSubmit({ ...ready, amountText: '' })).toBe(false)
+    expect(canSubmit({ ...ready, payer: null })).toBe(false)
+    expect(canSubmit({ ...ready, category: null })).toBe(false)
+    expect(canSubmit({ ...ready, date: '2026/07/27' })).toBe(false)
+    expect(canSubmit({ ...ready, status: 'submitting' })).toBe(false)
   })
 
-  it('builds an expense transaction with a numeric amount and no rejected toAccount', () => {
-    const transaction = buildTransaction(setCounterparty(filledExpense(), '全聯'))
+  it('builds the flat transaction and omits a blank payee', () => {
+    const state = setCounterparty(submitReady(), '   ')
 
-    expect(transaction).toEqual({
-      type: '支出',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
+    expect(buildTransaction(state)).toEqual({
+      date: DATE,
+      amount: 300,
+      payer: '小語',
+      split: '均分',
+      category: '餐飲',
+    })
+    expect(buildTransaction(state)).not.toHaveProperty('payee')
+  })
+
+  it('includes a trimmed payee when counterparty has content', () => {
+    const state = setCounterparty(submitReady(), '  全聯  ')
+
+    expect(buildTransaction(state)).toEqual({
+      date: DATE,
+      amount: 300,
+      payer: '小語',
+      split: '均分',
       category: '餐飲',
       payee: '全聯',
-      currency: 'TWD',
-    })
-    expect(typeof transaction.amount).toBe('number')
-    expect(transaction.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(transaction).not.toHaveProperty('toAccount')
-  })
-
-  it('builds a transfer transaction without rejected category or counterparty fields', () => {
-    let state = setType(filledExpense(), '轉帳')
-    state = selectToAccount(state, '台新銀行')
-
-    const transaction = buildTransaction(state)
-
-    expect(transaction).toEqual({
-      type: '轉帳',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
-      toAccount: '台新銀行',
-      currency: 'TWD',
-    })
-    expect(transaction).not.toHaveProperty('category')
-    expect(transaction).not.toHaveProperty('payee')
-  })
-
-  it('selects iou 應收 by clearing category and requiring counterparty', () => {
-    let state = setIou(filledExpense(), '應收')
-
-    expect(state.category).toBeNull()
-    expect(state.iou).toBe('應收')
-    expect(canSubmit(state)).toBe(false)
-
-    state = setCounterparty(state, '阿明')
-
-    expect(canSubmit(state)).toBe(true)
-    expect(buildTransaction(state)).toEqual({
-      type: '支出',
-      amount: 260,
-      date: '2026-07-27',
-      description: '晚餐',
-      account: '錢包',
-      payee: '阿明',
-      currency: 'TWD',
-      iou: '應收',
     })
   })
 
-  it('selects iou 應付 by preserving and requiring category and counterparty', () => {
-    let state = setIou(filledExpense(), '應付')
+  it('keeps keypad amount parsing immutable', () => {
+    const state = amountState('12.50')
 
-    expect(state.category).toBe('餐飲')
-    expect(canSubmit(state)).toBe(false)
-
-    state = setCounterparty(state, '阿明')
-    expect(canSubmit(state)).toBe(true)
-    expect(canSubmit({ ...state, category: null })).toBe(false)
-  })
-
-  it('toggles iou off without clearing category or counterparty still used by a normal expense', () => {
-    let state = setCounterparty(filledExpense(), '阿明')
-    state = setIou(state, '應付')
-
-    state = setIou(state, '應付')
-
-    expect(state.iou).toBeNull()
-    expect(state.category).toBe('餐飲')
-    expect(state.counterparty).toBe('阿明')
+    expect(state.amountText).toBe('12.50')
+    expect(amountValue(state)).toBe(12.5)
+    expect(pressKey(state, '.')).toEqual(state)
   })
 })
 
-describe('retry state', () => {
-  it('reuses the first idempotency key after a failed submission', () => {
-    let state = beginSubmit(filledExpense(), () => 'uuid-1')
-    state = submitFailed(state, 'timeout')
-    state = beginSubmit(state, () => 'uuid-2')
+describe('submission lifecycle', () => {
+  it('mints one idempotency key, keeps it across retry, and edited clears it', () => {
+    const firstUuid = vi.fn(() => 'uuid-1')
+    const secondUuid = vi.fn(() => 'uuid-2')
+    const ready = submitReady()
 
-    expect(state.idempotencyKey).toBe('uuid-1')
+    const submitting = beginSubmit(ready, firstUuid)
+    expect(submitting).toMatchObject({ status: 'submitting', idempotencyKey: 'uuid-1' })
+    expect(firstUuid).toHaveBeenCalledTimes(1)
+
+    const failed = submitFailed(submitting, '沒有網路連線，請再試一次')
+    expect(failed).toMatchObject({
+      status: 'error',
+      errorMessage: '沒有網路連線，請再試一次',
+      idempotencyKey: 'uuid-1',
+    })
+
+    const retrying = beginSubmit(failed, secondUuid)
+    expect(retrying).toMatchObject({ status: 'submitting', idempotencyKey: 'uuid-1' })
+    expect(secondUuid).not.toHaveBeenCalled()
+
+    const edited = setCounterparty(retrying, '家樂福')
+    expect(edited).toMatchObject({
+      status: 'idle',
+      errorMessage: null,
+      idempotencyKey: null,
+    })
+
+    expect(submitSucceeded(retrying)).toMatchObject({
+      status: 'success',
+      errorMessage: null,
+      idempotencyKey: 'uuid-1',
+    })
+  })
+
+  it('resetForNext starts a new form with 均分 selected', () => {
+    const reset = resetForNext({ ...submitReady(), split: '全額自己' }, '2026-07-28')
+
+    expect(reset).toEqual(initialState('2026-07-28'))
+    expect(reset).toMatchObject({ step: 'amount', split: '均分', returnToConfirm: false })
   })
 })

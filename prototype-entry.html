@@ -1,0 +1,1383 @@
+<!-- PROTOTYPE — throwaway. Three variants of the partner-ledger entry form, switchable via ?variant=. Not production. -->
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#17342d" />
+    <title>夥伴分攤記帳 · Prototype</title>
+    <link rel="stylesheet" href="/src/styles.css">
+    <style>
+      :root {
+        --prototype-ink: #17342d;
+        --prototype-muted: #64766f;
+        --prototype-accent: #a8ef76;
+        --prototype-accent-strong: #88d957;
+        --prototype-background: #f3f2ec;
+        --prototype-surface: #ffffff;
+        --prototype-line: #dfe5e1;
+        --prototype-warning: #fff3cb;
+        --prototype-warning-ink: #735300;
+        --prototype-shadow: 0 10px 28px rgb(23 52 45 / 8%);
+      }
+
+      body {
+        background: var(--prototype-background);
+      }
+
+      #prototype-app {
+        min-height: 100dvh;
+        padding: calc(22px + env(safe-area-inset-top, 0px)) 16px
+          calc(116px + env(safe-area-inset-bottom, 0px));
+      }
+
+      #prototype-app *,
+      #prototype-app *::before,
+      #prototype-app *::after {
+        box-sizing: border-box;
+      }
+
+      .prototype-header {
+        display: grid;
+        gap: 10px;
+        margin: 0 2px 18px;
+      }
+
+      .prototype-eyebrow {
+        color: var(--prototype-muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+      }
+
+      .prototype-title-row,
+      .section-heading,
+      .wizard-heading-row,
+      .recent-heading-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .prototype-title-row {
+        align-items: flex-start;
+      }
+
+      .prototype-title {
+        color: var(--prototype-ink);
+        font-size: clamp(28px, 8vw, 38px);
+        font-weight: 850;
+        letter-spacing: -0.06em;
+        line-height: 1;
+      }
+
+      .prototype-tag {
+        flex: none;
+        padding: 7px 10px;
+        border-radius: 999px;
+        background: var(--prototype-ink);
+        color: var(--prototype-accent);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .prototype-subtitle {
+        max-width: 40ch;
+        color: var(--prototype-muted);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .variant-panel,
+      .recent-section {
+        display: grid;
+        gap: 14px;
+      }
+
+      .entry-form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .prototype-card,
+      .recent-section {
+        padding: 16px;
+        border-radius: var(--radius-large);
+        background: var(--prototype-surface);
+        box-shadow: var(--prototype-shadow);
+      }
+
+      .prototype-card h2,
+      .recent-section h2 {
+        color: var(--prototype-ink);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .prototype-card h2 span,
+      .recent-section h2 span {
+        color: var(--prototype-muted);
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .field-label,
+      .text-field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field-label > span,
+      .text-field > span,
+      .picker-label {
+        color: var(--prototype-muted);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .amount-card {
+        display: grid;
+        gap: 8px;
+        padding: 16px;
+        border-radius: var(--radius-large);
+        background: var(--prototype-ink);
+        color: var(--prototype-surface);
+        box-shadow: 0 12px 30px rgb(23 52 45 / 18%);
+      }
+
+      .amount-card .field-label > span,
+      .amount-note {
+        color: rgb(255 255 255 / 70%);
+      }
+
+      .amount-input {
+        width: 100%;
+        min-height: 76px;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--prototype-accent);
+        font-size: clamp(54px, 17vw, 82px);
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        letter-spacing: -0.08em;
+        line-height: 0.95;
+      }
+
+      .amount-input::placeholder {
+        color: rgb(168 239 118 / 42%);
+      }
+
+      .amount-input:focus-visible {
+        border-radius: 10px;
+        box-shadow: 0 0 0 3px rgb(168 239 118 / 38%);
+      }
+
+      .amount-input::-webkit-inner-spin-button,
+      .amount-input::-webkit-outer-spin-button {
+        margin: 0;
+        -webkit-appearance: none;
+      }
+
+      .amount-input[type="number"] {
+        -moz-appearance: textfield;
+      }
+
+      .amount-note {
+        font-size: 12px;
+      }
+
+      .option-group {
+        display: grid;
+        gap: 9px;
+        padding: 16px;
+        border: 1px solid var(--prototype-line);
+        border-radius: var(--radius-large);
+        background: var(--prototype-surface);
+      }
+
+      .section-heading {
+        min-height: 24px;
+      }
+
+      .required-mark {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .selection-hint {
+        margin: -2px 2px 1px;
+        color: var(--prototype-muted);
+        font-size: 13px;
+      }
+
+      .selection-hint.is-unanswered {
+        padding: 8px 10px;
+        border-radius: 11px;
+        background: var(--prototype-warning);
+        color: var(--prototype-warning-ink);
+        font-weight: 750;
+      }
+
+      .selection-hint.is-answered {
+        color: var(--prototype-ink);
+        font-weight: 700;
+      }
+
+      .choice-grid {
+        display: grid;
+        gap: 8px;
+      }
+
+      .payer-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .chip-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .choice-grid button,
+      .chip-row button,
+      .scenario-grid button,
+      .giant-payer-grid button,
+      .split-stack button {
+        border: 1px solid var(--prototype-line);
+        border-radius: 14px;
+        background: var(--prototype-surface);
+        color: var(--prototype-ink);
+        font-weight: 750;
+        transition: border-color 140ms ease, background 140ms ease,
+          transform 140ms ease;
+      }
+
+      .choice-grid button:active,
+      .chip-row button:active,
+      .scenario-grid button:active,
+      .giant-payer-grid button:active,
+      .split-stack button:active {
+        transform: scale(0.98);
+      }
+
+      .choice-grid button:focus-visible,
+      .chip-row button:focus-visible,
+      .scenario-grid button:focus-visible,
+      .giant-payer-grid button:focus-visible,
+      .split-stack button:focus-visible,
+      .back-button:focus-visible,
+      .variant-switcher button:focus-visible,
+      .prototype-submit:focus-visible {
+        outline: 3px solid rgb(136 217 87 / 42%);
+        outline-offset: 2px;
+      }
+
+      .choice-grid button,
+      .chip-row button {
+        min-height: 50px;
+        padding: 8px 10px;
+      }
+
+      .choice-grid button.selected,
+      .chip-row button.selected,
+      .scenario-grid button.selected,
+      .giant-payer-grid button.selected,
+      .split-stack button.selected {
+        border-color: var(--prototype-accent-strong);
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+      }
+
+      .split-chip-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .split-chip-row button {
+        min-height: 58px;
+        padding: 8px 6px;
+        font-size: 13px;
+        line-height: 1.2;
+      }
+
+      .text-field input {
+        width: 100%;
+        min-height: 50px;
+        padding: 0 14px;
+        border: 1px solid var(--prototype-line);
+        border-radius: 14px;
+        outline: 0;
+        background: var(--prototype-background);
+        color: var(--prototype-ink);
+        font-size: 16px;
+      }
+
+      .text-field input:focus {
+        border-color: var(--prototype-accent-strong);
+        box-shadow: 0 0 0 3px rgb(136 217 87 / 20%);
+      }
+
+      .optional-note {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .derivation-card {
+        display: grid;
+        gap: 8px;
+        padding: 15px 16px;
+        border: 1px dashed #b8c9bb;
+        border-radius: var(--radius-large);
+        background: #f7fbf3;
+      }
+
+      .derivation-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+
+      .derivation-heading span:last-child {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+        letter-spacing: 0;
+      }
+
+      .derivation-copy {
+        min-height: 29px;
+        color: var(--prototype-muted);
+        font-size: 18px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .derivation-copy.is-ready {
+        color: var(--prototype-ink);
+      }
+
+      .entry-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 4;
+        display: grid;
+        gap: 7px;
+        margin: 0 -2px;
+        padding: 12px 2px calc(4px + env(safe-area-inset-bottom, 0px));
+        background: linear-gradient(transparent, var(--prototype-background) 24%);
+      }
+
+      .prototype-submit {
+        width: 100%;
+        min-height: 58px;
+        border: 0;
+        border-radius: var(--radius-large);
+        background: var(--prototype-ink);
+        color: var(--prototype-accent);
+        box-shadow: 0 10px 24px rgb(23 52 45 / 20%);
+        font-size: 18px;
+        font-weight: 850;
+      }
+
+      .prototype-submit:disabled {
+        cursor: default;
+        opacity: 0.35;
+      }
+
+      .action-note {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        text-align: center;
+      }
+
+      .notice {
+        min-height: 20px;
+        margin: 0 3px;
+        color: var(--prototype-ink);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .wizard-panel {
+        display: grid;
+        gap: 12px;
+      }
+
+      .wizard-heading-row {
+        align-items: flex-start;
+      }
+
+      .back-button {
+        min-height: 42px;
+        padding: 0 4px;
+        border: 0;
+        background: transparent;
+        color: var(--prototype-muted);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .wizard-step-label {
+        margin-left: auto;
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .progress-dots {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        padding: 0 2px;
+      }
+
+      .progress-dot {
+        height: 5px;
+        border-radius: 999px;
+        background: #dce4dd;
+      }
+
+      .progress-dot.active {
+        background: var(--prototype-ink);
+      }
+
+      .progress-dot.done {
+        background: var(--prototype-accent-strong);
+      }
+
+      .wizard-question {
+        margin: 6px 2px 2px;
+        color: var(--prototype-ink);
+        font-size: clamp(28px, 8vw, 38px);
+        font-weight: 850;
+        letter-spacing: -0.06em;
+        line-height: 1.05;
+      }
+
+      .wizard-supporting {
+        margin: 0 2px 8px;
+        color: var(--prototype-muted);
+        font-size: 14px;
+      }
+
+      .giant-payer-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        min-height: min(43vh, 270px);
+      }
+
+      .giant-payer-grid button {
+        display: grid;
+        min-height: 230px;
+        place-content: center;
+        gap: 9px;
+        padding: 14px 8px;
+        font-size: clamp(20px, 6vw, 30px);
+      }
+
+      .giant-payer-grid button span {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .split-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .split-stack button {
+        display: flex;
+        min-height: 70px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        text-align: left;
+      }
+
+      .split-stack button strong {
+        font-size: 17px;
+      }
+
+      .split-stack button span {
+        color: var(--prototype-muted);
+        font-size: 13px;
+        font-weight: 650;
+        text-align: right;
+      }
+
+      .wizard-summary {
+        padding: 13px 14px;
+        border-radius: 14px;
+        background: var(--prototype-ink);
+        color: var(--prototype-accent);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .scenario-card {
+        display: grid;
+        gap: 11px;
+        padding: 17px;
+        border-radius: var(--radius-large);
+        background: var(--prototype-ink);
+        color: var(--prototype-surface);
+        box-shadow: 0 12px 30px rgb(23 52 45 / 18%);
+      }
+
+      .scenario-card .section-heading h2,
+      .scenario-card .scenario-helper {
+        color: var(--prototype-surface);
+      }
+
+      .scenario-card .section-heading h2 span {
+        color: rgb(255 255 255 / 64%);
+      }
+
+      .scenario-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .scenario-grid button {
+        display: grid;
+        min-height: 73px;
+        align-content: center;
+        padding: 10px 7px;
+        background: rgb(255 255 255 / 8%);
+        border-color: rgb(255 255 255 / 22%);
+        color: var(--prototype-surface);
+        font-size: 13px;
+        line-height: 1.25;
+      }
+
+      .scenario-grid button.selected {
+        border-color: var(--prototype-accent);
+        background: var(--prototype-accent);
+        color: var(--prototype-ink);
+      }
+
+      .scenario-helper {
+        color: rgb(255 255 255 / 66%);
+        font-size: 12px;
+      }
+
+      .recent-section {
+        margin-top: 20px;
+      }
+
+      .recent-count {
+        color: var(--prototype-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .recent-list {
+        display: grid;
+        gap: 9px;
+      }
+
+      .recent-empty {
+        padding: 19px 10px;
+        border: 1px dashed var(--prototype-line);
+        border-radius: 14px;
+        color: var(--prototype-muted);
+        font-size: 14px;
+        text-align: center;
+      }
+
+      .recent-entry {
+        display: grid;
+        gap: 7px;
+        padding: 14px;
+        border-radius: 16px;
+        background: var(--prototype-background);
+      }
+
+      .recent-entry-top,
+      .recent-entry-meta {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .recent-category {
+        color: var(--prototype-ink);
+        font-size: 15px;
+        font-weight: 850;
+      }
+
+      .recent-date,
+      .recent-entry-meta,
+      .recent-counterparty {
+        color: var(--prototype-muted);
+        font-size: 12px;
+      }
+
+      .recent-total {
+        color: var(--prototype-ink);
+        font-size: 17px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        white-space: nowrap;
+      }
+
+      .recent-entry-main {
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .recent-derived {
+        padding-top: 7px;
+        border-top: 1px solid #e4eae4;
+        color: var(--prototype-ink);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .variant-switcher {
+        position: fixed;
+        bottom: calc(13px + env(safe-area-inset-bottom, 0px));
+        left: 50%;
+        z-index: 20;
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        align-items: center;
+        width: min(92vw, 390px);
+        min-height: 54px;
+        padding: 5px;
+        transform: translateX(-50%);
+        border-radius: 999px;
+        background: #090b0a;
+        color: #ffffff;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
+      }
+
+      .variant-switcher button {
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .variant-switcher button:hover {
+        background: rgb(255 255 255 / 15%);
+      }
+
+      .variant-switcher-label {
+        overflow: hidden;
+        font-size: 14px;
+        font-weight: 800;
+        text-align: center;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      @media (min-width: 420px) {
+        #prototype-app {
+          padding-right: 22px;
+          padding-left: 22px;
+        }
+      }
+
+      @media (max-width: 350px) {
+        .chip-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .split-chip-row {
+          grid-template-columns: 1fr;
+        }
+
+        .split-chip-row button {
+          min-height: 48px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #prototype-app *,
+        #prototype-app *::before,
+        #prototype-app *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="prototype-app"></div>
+    <script type="module">
+      const partners = ['阿哲', '小語'];
+      const categories = ['餐飲', '交通', '日用品', '娛樂', '帳單', '其他'];
+      const splitLabels = {
+        equal: '均分',
+        other: '全額對方',
+        self: '全額自己',
+      };
+      const variantLabels = {
+        A: 'A — 單頁表單',
+        B: 'B — 逐步精靈',
+        C: 'C — 情境一鍵',
+      };
+      const variantNotes = {
+        A: '所有欄位都在同一頁，快速補齊一筆帳。',
+        B: '每一步只回答一個問題，最後再確認送出。',
+        C: '用日常說法一次選好誰付、怎麼分。',
+      };
+      const scenarios = [
+        { key: 'zhe-equal', label: '阿哲付，均分', payer: '阿哲', split: 'equal' },
+        { key: 'yu-equal', label: '小語付，均分', payer: '小語', split: 'equal' },
+        { key: 'zhe-other', label: '阿哲墊小語的', payer: '阿哲', split: 'other' },
+        { key: 'yu-other', label: '小語墊阿哲的', payer: '小語', split: 'other' },
+        { key: 'zhe-self', label: '阿哲自己的', payer: '阿哲', split: 'self' },
+        { key: 'yu-self', label: '小語自己的', payer: '小語', split: 'self' },
+      ];
+      const variantOrder = ['A', 'B', 'C'];
+      const root = document.getElementById('prototype-app');
+      const devHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+      let activeVariant = readVariantFromUrl();
+      let formState = createFormState();
+      let recentEntries = [];
+      let notice = '';
+
+      function today() {
+        const date = new Date();
+        const year = String(date.getFullYear()).padStart(4, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return year + '-' + month + '-' + day;
+      }
+
+      function createFormState() {
+        return {
+          amount: '',
+          payer: '',
+          split: 'equal',
+          category: '',
+          counterparty: '',
+          date: today(),
+          wizardStep: 1,
+        };
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, function (character) {
+          return {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;',
+          }[character];
+        });
+      }
+
+      function readVariantFromUrl() {
+        const requested = new URLSearchParams(location.search).get('variant');
+        const value = requested ? requested.toUpperCase() : 'A';
+        return variantOrder.includes(value) ? value : 'A';
+      }
+
+      function amountValue() {
+        const amount = Number.parseFloat(formState.amount);
+        return Number.isFinite(amount) && amount > 0 ? amount : 0;
+      }
+
+      function formatAmount(amount) {
+        const rounded = Math.round((amount + Number.EPSILON) * 100) / 100;
+        return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+      }
+
+      function otherPartner(payer) {
+        return partners.find(function (partner) {
+          return partner !== payer;
+        }) || '';
+      }
+
+      function derivedShares() {
+        const amount = amountValue();
+        const payer = formState.payer;
+        const other = otherPartner(payer);
+        if (!amount || !payer) {
+          return { payer: 0, other: 0, otherName: other };
+        }
+        if (formState.split === 'other') {
+          return { payer: 0, other: amount, otherName: other };
+        }
+        if (formState.split === 'self') {
+          return { payer: amount, other: 0, otherName: other };
+        }
+        const half = Math.round((amount / 2 + Number.EPSILON) * 100) / 100;
+        return { payer: half, other: half, otherName: other };
+      }
+
+      function canDerive() {
+        return amountValue() > 0 && Boolean(formState.payer) && Boolean(formState.split);
+      }
+
+      function canSubmit() {
+        return amountValue() > 0 && Boolean(formState.payer) && Boolean(formState.category);
+      }
+
+      function previewText() {
+        if (!amountValue()) {
+          return '填入金額並選擇付款人，這裡會顯示分攤結果';
+        }
+        if (!formState.payer) {
+          return '請先選擇付款人';
+        }
+        if (formState.split === 'self') {
+          return '不產生應付';
+        }
+        const shares = derivedShares();
+        return shares.otherName + '應付' + formState.payer + ' ' + formatAmount(shares.other);
+      }
+
+      function wizardSummary() {
+        const amount = amountValue();
+        const category = formState.category || '尚未選分類';
+        const payer = formState.payer || '尚未選付款人';
+        return (amount ? formatAmount(amount) : '—') + ' · ' + payer + ' · ' +
+          splitLabels[formState.split] + ' · ' + category;
+      }
+
+      function pressed(selected) {
+        return selected ? 'true' : 'false';
+      }
+
+      function selectedClass(selected) {
+        return selected ? ' selected' : '';
+      }
+
+      function renderAmountField(label, autofocus) {
+        return '<label class="amount-card field-label">' +
+          '<span>' + escapeHtml(label) + '</span>' +
+          '<input class="amount-input" data-field="amount" type="number" min="0.01" step="0.01" ' +
+          'inputmode="decimal" autocomplete="off" placeholder="0" value="' +
+          escapeHtml(formState.amount) + '"' + (autofocus ? ' autofocus' : '') + ' />' +
+          '<span class="amount-note">實際付款總額，可輸入 .5</span>' +
+          '</label>';
+      }
+
+      function renderPayerPicker() {
+        const unanswered = !formState.payer;
+        return '<section class="option-group" aria-labelledby="payer-heading">' +
+          '<div class="section-heading">' +
+          '<h2 id="payer-heading">付款人 <span>必選</span></h2>' +
+          '<span class="required-mark">明確選一位</span>' +
+          '</div>' +
+          '<p data-role="payer-hint" class="selection-hint ' +
+          (unanswered ? 'is-unanswered' : 'is-answered') + '">' +
+          (unanswered ? '尚未選擇付款人' : '已選：' + escapeHtml(formState.payer)) +
+          '</p>' +
+          '<div class="choice-grid payer-grid">' +
+          partners.map(function (partner) {
+            const selected = formState.payer === partner;
+            return '<button type="button" data-payer="' + escapeHtml(partner) +
+              '" aria-pressed="' + pressed(selected) + '" class="' +
+              selectedClass(selected).trim() + '">' + escapeHtml(partner) + '</button>';
+          }).join('') +
+          '</div>' +
+          '</section>';
+      }
+
+      function renderSplitPicker() {
+        const splitHelp = {
+          equal: '一人一半',
+          other: '另一位承擔全部',
+          self: '付款人自己負擔',
+        };
+        return '<section class="option-group" aria-labelledby="split-heading">' +
+          '<div class="section-heading">' +
+          '<h2 id="split-heading">分攤方式 <span>均分預設</span></h2>' +
+          '<span class="required-mark">三選一</span>' +
+          '</div>' +
+          '<div class="split-chip-row">' +
+          Object.keys(splitLabels).map(function (split) {
+            const selected = formState.split === split;
+            return '<button type="button" data-split="' + split +
+              '" aria-pressed="' + pressed(selected) + '" class="' +
+              selectedClass(selected).trim() + '">' +
+              '<strong>' + splitLabels[split] + '</strong><br /><small>' +
+              splitHelp[split] + '</small></button>';
+          }).join('') +
+          '</div>' +
+          '</section>';
+      }
+
+      function renderCategoryPicker() {
+        return '<section class="option-group" aria-labelledby="category-heading">' +
+          '<div class="section-heading">' +
+          '<h2 id="category-heading">分類 <span>必選</span></h2>' +
+          '<span class="required-mark">必填</span>' +
+          '</div>' +
+          '<div class="choice-grid chip-grid">' +
+          categories.map(function (category) {
+            const selected = formState.category === category;
+            return '<button type="button" data-category="' + escapeHtml(category) +
+              '" aria-pressed="' + pressed(selected) + '" class="' +
+              selectedClass(selected).trim() + '">' + escapeHtml(category) + '</button>';
+          }).join('') +
+          '</div>' +
+          '</section>';
+      }
+
+      function renderCounterpartyField() {
+        return '<label class="prototype-card text-field">' +
+          '<span>交易對象 <em class="optional-note">選填</em></span>' +
+          '<input data-field="counterparty" type="text" autocomplete="off" ' +
+          'placeholder="例如：週末晚餐、台北車站" value="' +
+          escapeHtml(formState.counterparty) + '" />' +
+          '</label>';
+      }
+
+      function renderDateField() {
+        return '<label class="prototype-card text-field">' +
+          '<span>日期 <em class="optional-note">預設今天</em></span>' +
+          '<input data-field="date" type="date" value="' +
+          escapeHtml(formState.date) + '" />' +
+          '</label>';
+      }
+
+      function renderPreview() {
+        return '<section class="derivation-card" aria-live="polite">' +
+          '<div class="derivation-heading"><span>即時分攤預覽</span>' +
+          '<span>只做推導</span></div>' +
+          '<p data-role="preview" class="derivation-copy' +
+          (canDerive() ? ' is-ready' : '') + '">' + escapeHtml(previewText()) + '</p>' +
+          '</section>';
+      }
+
+      function renderEntryActions(label) {
+        return '<div class="entry-actions">' +
+          '<button data-role="submit" class="prototype-submit" type="submit"' +
+          (canSubmit() ? '' : ' disabled') + '>' + escapeHtml(label) + '</button>' +
+          '<span class="action-note">儲存後會清空表單，資料只存在這個頁面</span>' +
+          '</div>';
+      }
+
+      function renderVariantA() {
+        return '<section class="variant-panel variant-a" aria-labelledby="variant-a-heading">' +
+          '<div class="section-heading"><h2 id="variant-a-heading">單頁表單 <span>平面快速輸入</span></h2>' +
+          '<span class="prototype-tag">A</span></div>' +
+          '<form class="entry-form flat-form" data-entry-form autocomplete="off">' +
+          renderAmountField('金額', true) +
+          renderPayerPicker() +
+          renderSplitPicker() +
+          renderCategoryPicker() +
+          renderCounterpartyField() +
+          renderDateField() +
+          renderPreview() +
+          renderEntryActions('儲存這筆') +
+          '</form>' +
+          '</section>';
+      }
+
+      function renderProgress() {
+        const labels = ['金額', '付款人', '分攤', '完成'];
+        return '<div class="progress-dots" aria-label="步驟進度">' +
+          labels.map(function (label, index) {
+            const number = index + 1;
+            const status = number === formState.wizardStep ? ' active' :
+              number < formState.wizardStep ? ' done' : '';
+            return '<span class="progress-dot' + status + '" title="' +
+              escapeHtml(label) + '"></span>';
+          }).join('') +
+          '</div>';
+      }
+
+      function renderWizardBack() {
+        return formState.wizardStep > 1
+          ? '<button class="back-button" type="button" data-action="back">← 上一步</button>'
+          : '<span></span>';
+      }
+
+      function renderGiantPayers() {
+        return '<div class="giant-payer-grid">' +
+          partners.map(function (partner) {
+            const selected = formState.payer === partner;
+            return '<button type="button" data-payer="' + escapeHtml(partner) +
+              '" aria-pressed="' + pressed(selected) + '" class="' +
+              selectedClass(selected).trim() + '"><strong>' + escapeHtml(partner) +
+              '</strong><span>付款人</span></button>';
+          }).join('') +
+          '</div>';
+      }
+
+      function renderStackedSplits() {
+        const splitHelp = {
+          equal: '每人各一半',
+          other: '付款人先墊，另一位全額負擔',
+          self: '付款人自己負擔，不產生應付',
+        };
+        return '<div class="split-stack">' +
+          Object.keys(splitLabels).map(function (split) {
+            const selected = formState.split === split;
+            return '<button type="button" data-split="' + split +
+              '" aria-pressed="' + pressed(selected) + '" class="' +
+              selectedClass(selected).trim() + '"><strong>' +
+              splitLabels[split] + '</strong><span>' + splitHelp[split] +
+              '</span></button>';
+          }).join('') +
+          '</div>';
+      }
+
+      function renderWizardStep() {
+        if (formState.wizardStep === 1) {
+          return renderAmountField('這筆多少？', true) +
+            '<p class="wizard-supporting">先輸入實際付款總額，之後再選誰付。</p>' +
+            '<div class="entry-actions"><button data-role="next" class="prototype-submit" ' +
+            'type="button" data-action="next"' + (amountValue() ? '' : ' disabled') +
+            '>下一步：選付款人</button></div>';
+        }
+        if (formState.wizardStep === 2) {
+          return '<h2 class="wizard-question">誰付的？</h2>' +
+            '<p class="wizard-supporting">請明確選一位；點下去就進下一步。</p>' +
+            renderGiantPayers();
+        }
+        if (formState.wizardStep === 3) {
+          return '<h2 class="wizard-question">怎麼分？</h2>' +
+            '<p class="wizard-supporting">均分先放第一個，也可以改成全額由一方負擔。</p>' +
+            renderStackedSplits();
+        }
+        return '<h2 class="wizard-question">最後確認</h2>' +
+          '<p data-role="wizard-summary" class="wizard-summary">' +
+          escapeHtml(wizardSummary()) + '</p>' +
+          renderCategoryPicker() +
+          renderCounterpartyField() +
+          renderDateField() +
+          renderPreview() +
+          renderEntryActions('確認送出');
+      }
+
+      function renderVariantB() {
+        return '<section class="variant-panel variant-b wizard-panel" aria-labelledby="variant-b-heading">' +
+          '<div class="wizard-heading-row">' +
+          renderWizardBack() +
+          '<h2 id="variant-b-heading">逐步精靈 <span>一次一題</span></h2>' +
+          '<span class="wizard-step-label">第 ' + formState.wizardStep + ' / 4 步</span>' +
+          '</div>' +
+          renderProgress() +
+          '<form class="entry-form wizard-form" data-entry-form autocomplete="off">' +
+          renderWizardStep() +
+          '</form>' +
+          '</section>';
+      }
+
+      function scenarioKeyForState() {
+        const match = scenarios.find(function (scenario) {
+          return scenario.payer === formState.payer && scenario.split === formState.split;
+        });
+        return match ? match.key : '';
+      }
+
+      function renderScenarioGrid() {
+        const selectedKey = scenarioKeyForState();
+        return '<div class="scenario-grid">' +
+          scenarios.map(function (scenario) {
+            const selected = scenario.key === selectedKey;
+            return '<button type="button" data-scenario="' + scenario.key +
+              '" aria-label="' + escapeHtml(scenario.label) + '" aria-pressed="' +
+              pressed(selected) + '" class="' + selectedClass(selected).trim() +
+              '"><strong>' + escapeHtml(scenario.label) + '</strong></button>';
+          }).join('') +
+          '</div>';
+      }
+
+      function renderVariantC() {
+        return '<section class="variant-panel variant-c" aria-labelledby="variant-c-heading">' +
+          '<div class="section-heading"><h2 id="variant-c-heading">情境一鍵 <span>一句話選完分攤</span></h2>' +
+          '<span class="prototype-tag">C</span></div>' +
+          '<form class="entry-form scenario-form" data-entry-form autocomplete="off">' +
+          renderAmountField('金額', false) +
+          '<section class="scenario-card" aria-labelledby="scenario-heading">' +
+          '<div class="section-heading"><h2 id="scenario-heading">這筆是哪種情境？ ' +
+          '<span>付款人 × 分攤方式</span></h2></div>' +
+          renderScenarioGrid() +
+          '<p class="scenario-helper">兩欄是誰付款，三列是怎麼分。</p>' +
+          '</section>' +
+          renderCategoryPicker() +
+          renderCounterpartyField() +
+          renderDateField() +
+          renderPreview() +
+          renderEntryActions('儲存這筆') +
+          '</form>' +
+          '</section>';
+      }
+
+      function renderRecentSection() {
+        const entries = recentEntries.slice().reverse();
+        const list = entries.length
+          ? '<div class="recent-list">' + entries.map(renderRecentEntry).join('') + '</div>'
+          : '<div class="recent-empty">還沒有輸入紀錄；送出後會出現在這裡。</div>';
+        return '<section class="recent-section" aria-labelledby="recent-heading">' +
+          '<div class="recent-heading-row"><h2 id="recent-heading">最近輸入</h2>' +
+          '<span class="recent-count">' + recentEntries.length + ' 筆 · 僅記憶體</span></div>' +
+          '<p data-role="notice" class="notice" aria-live="polite">' + escapeHtml(notice) + '</p>' +
+          list +
+          '</section>';
+      }
+
+      function renderRecentEntry(entry) {
+        const counterparty = entry.counterparty
+          ? '<span class="recent-counterparty"> · ' + escapeHtml(entry.counterparty) + '</span>'
+          : '';
+        return '<article class="recent-entry">' +
+          '<div class="recent-entry-top"><div><span class="recent-category">' +
+          escapeHtml(entry.category) + '</span><span class="recent-date"> · ' +
+          escapeHtml(entry.date) + '</span></div><strong class="recent-total">' +
+          formatAmount(entry.amount) + '</strong></div>' +
+          '<p class="recent-entry-main">' + escapeHtml(entry.payer) + '付款 · ' +
+          escapeHtml(entry.splitLabel) + counterparty + '</p>' +
+          '<p class="recent-entry-meta">' + escapeHtml(entry.payer) + '份額 ' +
+          formatAmount(entry.shares.payer) + ' · ' + escapeHtml(entry.otherName) +
+          '份額 ' + formatAmount(entry.shares.other) + '</p>' +
+          '<p class="recent-derived">' + escapeHtml(entry.preview) + '</p>' +
+          '</article>';
+      }
+
+      function renderSwitcher() {
+        if (!devHost) {
+          return '';
+        }
+        const index = variantOrder.indexOf(activeVariant);
+        return '<nav class="variant-switcher" aria-label="原型變體切換">' +
+          '<button type="button" data-variant-step="-1" aria-label="上一個變體">←</button>' +
+          '<span class="variant-switcher-label">' + escapeHtml(variantLabels[activeVariant]) +
+          '</span>' +
+          '<button type="button" data-variant-step="1" aria-label="下一個變體">→</button>' +
+          '</nav>';
+      }
+
+      function renderApp() {
+        const variantMarkup = activeVariant === 'A'
+          ? renderVariantA()
+          : activeVariant === 'B'
+            ? renderVariantB()
+            : renderVariantC();
+        root.innerHTML = '<header class="prototype-header">' +
+          '<span class="prototype-eyebrow">PARTNER LEDGER · ENTRY LAB</span>' +
+          '<div class="prototype-title-row"><h1 class="prototype-title">新增一筆分攤</h1>' +
+          '<span class="prototype-tag">' + escapeHtml(activeVariant) + '</span></div>' +
+          '<p class="prototype-subtitle">' + escapeHtml(variantNotes[activeVariant]) +
+          '</p></header>' + variantMarkup + renderRecentSection() + renderSwitcher();
+        syncFormUi();
+      }
+
+      function syncFormUi() {
+        const preview = root.querySelector('[data-role="preview"]');
+        if (preview) {
+          preview.textContent = previewText();
+          preview.classList.toggle('is-ready', canDerive());
+        }
+        const submit = root.querySelector('[data-role="submit"]');
+        if (submit) {
+          submit.disabled = !canSubmit();
+        }
+        const next = root.querySelector('[data-role="next"]');
+        if (next) {
+          next.disabled = !amountValue();
+        }
+        const hint = root.querySelector('[data-role="payer-hint"]');
+        if (hint) {
+          hint.textContent = formState.payer
+            ? '已選：' + formState.payer
+            : '尚未選擇付款人';
+          hint.classList.toggle('is-unanswered', !formState.payer);
+          hint.classList.toggle('is-answered', Boolean(formState.payer));
+        }
+        const summary = root.querySelector('[data-role="wizard-summary"]');
+        if (summary) {
+          summary.textContent = wizardSummary();
+        }
+        const message = root.querySelector('[data-role="notice"]');
+        if (message) {
+          message.textContent = notice;
+        }
+      }
+
+      function saveEntry() {
+        if (!canSubmit()) {
+          notice = '請完成金額、付款人與分類。';
+          syncFormUi();
+          return;
+        }
+        const shares = derivedShares();
+        recentEntries.push({
+          amount: amountValue(),
+          payer: formState.payer,
+          split: formState.split,
+          splitLabel: splitLabels[formState.split],
+          category: formState.category,
+          counterparty: formState.counterparty.trim(),
+          date: formState.date,
+          shares: shares,
+          otherName: shares.otherName,
+          preview: previewText(),
+        });
+        formState = createFormState();
+        notice = '已加入最近輸入，表單已清空。';
+        renderApp();
+      }
+
+      function cycleVariant(delta) {
+        if (!devHost) {
+          return;
+        }
+        const currentIndex = variantOrder.indexOf(activeVariant);
+        const nextIndex = (currentIndex + delta + variantOrder.length) % variantOrder.length;
+        activeVariant = variantOrder[nextIndex];
+        const url = new URL(location.href);
+        url.searchParams.set('variant', activeVariant);
+        history.replaceState(null, '', url.pathname + '?' + url.searchParams.toString() + url.hash);
+        notice = '';
+        renderApp();
+        window.scrollTo(0, 0);
+      }
+
+      function isEditableTarget(target) {
+        return target instanceof HTMLElement &&
+          (target.matches('input, textarea, select') ||
+            target.isContentEditable ||
+            Boolean(target.closest('[contenteditable="true"]')));
+      }
+
+      root.addEventListener('input', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.dataset.field) {
+          return;
+        }
+        formState[target.dataset.field] = target.value;
+        notice = '';
+        syncFormUi();
+      });
+
+      root.addEventListener('change', function (event) {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || !target.dataset.field) {
+          return;
+        }
+        formState[target.dataset.field] = target.value;
+        notice = '';
+        syncFormUi();
+      });
+
+      root.addEventListener('click', function (event) {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+          return;
+        }
+        const button = target.closest('button');
+        if (!button || !root.contains(button)) {
+          return;
+        }
+
+        if (button.dataset.variantStep) {
+          cycleVariant(Number(button.dataset.variantStep));
+          return;
+        }
+        if (button.dataset.action === 'next') {
+          if (activeVariant === 'B' && formState.wizardStep === 1 && amountValue()) {
+            formState.wizardStep = 2;
+            notice = '';
+            renderApp();
+          }
+          return;
+        }
+        if (button.dataset.action === 'back') {
+          if (activeVariant === 'B' && formState.wizardStep > 1) {
+            formState.wizardStep -= 1;
+            notice = '';
+            renderApp();
+          }
+          return;
+        }
+        if (button.dataset.payer) {
+          formState.payer = button.dataset.payer;
+          notice = '';
+          if (activeVariant === 'B' && formState.wizardStep === 2) {
+            formState.wizardStep = 3;
+          }
+          renderApp();
+          return;
+        }
+        if (button.dataset.split) {
+          formState.split = button.dataset.split;
+          notice = '';
+          if (activeVariant === 'B' && formState.wizardStep === 3) {
+            formState.wizardStep = 4;
+          }
+          renderApp();
+          return;
+        }
+        if (button.dataset.category) {
+          formState.category = button.dataset.category;
+          notice = '';
+          renderApp();
+          return;
+        }
+        if (button.dataset.scenario) {
+          const scenario = scenarios.find(function (item) {
+            return item.key === button.dataset.scenario;
+          });
+          if (scenario) {
+            formState.payer = scenario.payer;
+            formState.split = scenario.split;
+            notice = '';
+            renderApp();
+          }
+        }
+      });
+
+      root.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (activeVariant === 'B' && formState.wizardStep !== 4) {
+          return;
+        }
+        saveEntry();
+      });
+
+      document.addEventListener('keydown', function (event) {
+        if (!devHost || isEditableTarget(event.target)) {
+          return;
+        }
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault();
+          cycleVariant(-1);
+        } else if (event.key === 'ArrowRight') {
+          event.preventDefault();
+          cycleVariant(1);
+        }
+      });
+
+      window.addEventListener('popstate', function () {
+        activeVariant = readVariantFromUrl();
+        renderApp();
+      });
+
+      renderApp();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+.clasprc.json
+.clasp.json
+test-results/
+playwright-report/

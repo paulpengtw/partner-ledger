@@ -56,7 +56,7 @@ describe('partner book doPost', () => {
           分類: '餐飲',
           交易對象: '全聯',
           記帳人: '阿哲',
-          來源: 'pwa',
+          來源: 'web-app',
           沖銷txn_id: '',
         },
       ])
@@ -232,7 +232,7 @@ describe('partner book doPost', () => {
           分類: '餐飲',
           交易對象: '全聯',
           記帳人: '阿哲',
-          來源: 'pwa',
+          來源: 'web-app',
           沖銷txn_id: '',
           voided: false,
         },
@@ -255,7 +255,7 @@ describe('partner book doPost', () => {
         分攤方式: '這筆平分',
         分類: '餐飲',
         記帳人: '小語',
-        來源: 'pwa',
+        來源: 'web-app',
         沖銷txn_id: 'list-void-001',
       })
 
@@ -323,7 +323,7 @@ describe('partner book doPost', () => {
           分攤方式: '幫狗狗付',
           分類: '交通',
           記帳人: '小語',
-          來源: 'pwa',
+          來源: 'web-app',
           沖銷txn_id: '',
         })
       }
@@ -361,7 +361,7 @@ describe('partner book doPost', () => {
         分類: '結清',
         交易對象: '',
         記帳人: '小語',
-        來源: 'pwa',
+        來源: 'web-app',
         沖銷txn_id: '',
       })
 
@@ -498,7 +498,7 @@ describe('partner book doPost', () => {
         分類: '餐飲',
         交易對象: '全聯',
         記帳人: '小語',
-        來源: 'pwa',
+        來源: 'web-app',
         沖銷txn_id: 'reverse-base-001',
       })
 

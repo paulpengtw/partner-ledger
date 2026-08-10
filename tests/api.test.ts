@@ -80,7 +80,7 @@ const LEDGER_TRANSACTION: LedgerTransaction = {
   分類: '餐飲',
   交易對象: '全聯',
   記帳人: '小語',
-  來源: 'pwa',
+  來源: 'web-app',
   沖銷txn_id: '',
   voided: false,
 }

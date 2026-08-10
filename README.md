@@ -21,3 +21,7 @@ npm test
 
 Run `python3 scripts/gen-fixture.py` from the repository root to regenerate the
 Python-source-of-truth byte-parity fixture.
+
+## Credits
+
+App icon derived from Twemoji (https://github.com/jdecked/twemoji), licensed under CC-BY 4.0.

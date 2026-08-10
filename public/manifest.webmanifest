@@ -1,7 +1,7 @@
 {
-  "name": "Partner Ledger 夥伴記帳",
-  "short_name": "記帳",
-  "description": "夥伴記帳快速輸入",
+  "name": "狗狗記帳",
+  "short_name": "狗狗帳",
+  "description": "狗狗記帳快速輸入",
   "lang": "zh-Hant",
   "display": "standalone",
   "start_url": "/",

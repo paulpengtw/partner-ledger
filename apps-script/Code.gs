@@ -1053,7 +1053,7 @@ function expandSettleEntry_(input) {
     category: SETTLEMENT_CATEGORY,
     payee: '',
     enterer: input.enterer,
-    source: 'pwa',
+    source: 'web-app',
     reversalTxnId: '',
   });
 }
@@ -1081,7 +1081,7 @@ function expandReverseEntry_(input) {
     category: original['分類'],
     payee: original['交易對象'],
     enterer: input.enterer,
-    source: 'pwa',
+    source: 'web-app',
     reversalTxnId: original.txn_id,
   });
 }

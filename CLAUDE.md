@@ -1,10 +1,10 @@
-# solo-ledger
+# partner-ledger
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in this repo's GitHub Issues (paulpengtw-aiagent/solo-ledger), managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in this repo's GitHub Issues (paulpengtw/partner-ledger), managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

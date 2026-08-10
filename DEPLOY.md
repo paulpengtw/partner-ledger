@@ -32,7 +32,7 @@ Keep secrets in three distinct configuration homes:
 
 ## 2. Cloudflare Pages release (manual, direct-upload mode)
 
-ADR 0001 chose GitHub Actions over Pages Git integration, so the Pages project is not connected to this repository. Do not add a repository-connection step.
+ADR 0001 chose GitHub Actions over Pages Git integration. The Pages project `partner-ledger` was created on 2026-08-10 in direct-upload mode, is not connected to this repository, and is live at https://partner-ledger.pages.dev. Do not add a repository-connection step.
 
 1. Install the repository dependencies:
 
@@ -51,7 +51,7 @@ ADR 0001 chose GitHub Actions over Pages Git integration, so the Pages project i
 3. Upload the Pages release directly:
 
    ```sh
-   npx wrangler pages deploy dist --project-name=<pages-project-name> --branch=main
+   npx wrangler pages deploy dist --project-name=partner-ledger --branch=main
    ```
 
 The local shell must provide `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
@@ -64,6 +64,8 @@ Set these four runtime environment variables on the Pages project, not in source
 | `EXPENSE_API_SECRET` | HMAC signing secret — must match the Apps Script Script Property |
 | `CF_ACCESS_TEAM_DOMAIN` | Cloudflare Access team domain |
 | `CF_ACCESS_AUD` | Cloudflare Access AUD tag |
+
+All four runtime variables are currently set through the Pages secret mechanism as encrypted secrets (`secret_text`), not plain-text variables (`plain_text`). Their values are not readable back in the dashboard. A maintainer who wants `EXPENSE_API_URL`, `CF_ACCESS_TEAM_DOMAIN`, or `CF_ACCESS_AUD` visible as plain text can re-add those variables as `plain_text` in the dashboard.
 
 The Pages Function at `functions/api/[action].ts` serves `/api/[action]` and admits exactly these seven actions:
 
@@ -78,6 +80,10 @@ reverse_transaction
 ```
 
 ## 3. Apps Script release (manual)
+
+The current project is titled `狗狗記帳_gs`, has Script ID `1ILn1uVrpUk-SO7SyCaGxG20UOVj4eqVNKYrSmB-uGKV4_tbbSQ1YF5Ko`, and is owned by `paulpeng118@gmail.com`. Its `/exec` web-app deployment ID is `AKfycbzsK256P__IeaEpVzaFwnLfvKk4RVBQTZ-vpHIUG0l71bTD-7zrG9y842SyI_Ku52hC`; it currently serves version 2, has access `ANYONE_ANONYMOUS`, and executes as `USER_DEPLOYING`.
+
+The bound spreadsheet is titled `狗狗記帳_excel` and has ID `1JKJshYxThC9_HmLssoOSaGcKGutiO1EHTkUp_SyDfi8`. `setupSpreadsheet()` has been run; the four sheets exist and `分類` is seeded.
 
 1. Create a blank Google Spreadsheet and record its ID.
 2. Create a standalone Apps Script project and record the Script ID.
@@ -99,6 +105,14 @@ reverse_transaction
    clasp push
    ```
 
+Operational warning: `clasp push` alone does **not** change what `/exec` serves. A web-app deployment is pinned to a numbered version, so after pushing you must also cut a new version and re-point the deployment:
+
+```sh
+clasp deploy -i <DEPLOYMENT_ID> -d "<description>"
+```
+
+Skipping this is what makes `/exec` return the HTML error `找不到以下指令碼函式：doPost` while the source in the editor looks correct.
+
 Set these Script Properties in the Apps Script editor:
 
 | Property | Required? | Notes |
@@ -107,11 +121,13 @@ Set these Script Properties in the Apps Script editor:
 | `EXPENSE_API_SECRET` | Required | Byte-identical to the Pages value; generate with `openssl rand -hex 32` |
 | `LEDGER_BACKUP_FOLDER_ID` | Optional | Drive folder for weekly backups |
 
-Then choose **Deploy → New deployment → Web app**, execute as **Me**, and set access to **Anyone**. Record the resulting `/exec` URL and set it as the Pages `EXPENSE_API_URL`.
+Then choose **Deploy → New deployment → Web app**, execute as **Me**, and set access to **Anyone**. Record the resulting `/exec` URL and set it as the Pages `EXPENSE_API_URL`. (These correspond to `USER_DEPLOYING` and `ANYONE_ANONYMOUS`, which is what the current deployment reports.)
 
 Apps Script `doPost` routes six actions—the seven above minus `auth-check`, which the Pages Function answers itself.
 
 The weekly backup writes to a Drive folder named `Partner Ledger backups`.
+
+Testing note: probing `/exec` with `curl -L` is misleading. On success Apps Script answers a POST with a `302` to `script.googleusercontent.com`, and that second hop is GET-only, so `curl -L` re-POSTs into a `405`/`401` plus a Drive “can't open this file” HTML page that looks like an auth failure. Probe by POSTing without `-L`, then issue a GET to the `Location` URL.
 
 ## 4. First-time spreadsheet setup (run from the Apps Script editor)
 
@@ -137,36 +153,40 @@ The weekly backup writes to a Drive folder named `Partner Ledger backups`.
 
 ## 5. Smoke checklist
 
+Steps 1, 4, 5, 6, 7 and 8 were executed and passed on 2026-08-10 against the live deployment. Specifically verified: idempotent replay of a `txn_id` returned `already: true` and appended no second row; `記帳人` was stamped server-side and `來源` was `pwa`; over-settlement was refused with `over-settlement: amount 1150 exceeds outstanding 150`; the `結清` row carried `分類` `結清`, `付款人` the debtor, and an empty `分攤方式`; and 沖銷 appended mirror rows linked by `沖銷txn_id` while leaving both originals unedited and undeleted.
+
+Ordering warning: steps 7 and 8 must be run in the order settle (step 8) before reverse (step 7). `computePayables_` skips voided rows, so reversing the spending row first drops the outstanding balance to zero and leaves step 8 with no real 應付 direction to settle against.
+
 1. **Access gate.** Send an unauthenticated request to `/api/health`. It must be refused, not served. The deployed behaviour distinguishes a plain browser POST, which redirects to the Cloudflare Access login, from an XHR POST, which returns `401`; describe and observe that distinction rather than relying on one exact status locally.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/health
+   curl -X POST https://partner-ledger.pages.dev/api/health
    unauthenticated; try the plain browser request and the XHR request separately
    ```
 
 2. **Authenticated health.** After Access authentication, send the same request and confirm that `/api/health` succeeds.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/health
+   curl -X POST https://partner-ledger.pages.dev/api/health
    authenticated through Cloudflare Access
    ```
 
 3. **Caller identity.** Call `auth-check` and confirm that it returns the caller's identity and that the Cloudflare Access email resolves through the `設定` email mapping to a `記帳人` name. If it comes back unmapped, the `設定` edit from §4 was not done.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/auth-check
+   curl -X POST https://partner-ledger.pages.dev/api/auth-check
    ```
 
-4. **Sheet vocabulary.** Call `get_options` and confirm that it returns the sheet-resident vocabulary: the seeded `分類` list, including the reserved `結清`, and the `選項清單` suggestions.
+4. **Sheet vocabulary.** Call `get_options` and confirm that it returns the sheet-resident vocabulary: the seeded `分類` list with the reserved `結清` absent, and the `選項清單` suggestions. `getOptions_` filters `結清` out because it is reserved for settlement rows, `create_transaction` rejects it, and it is reachable only via `settle`.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/get_options
+   curl -X POST https://partner-ledger.pages.dev/api/get_options
    ```
 
 5. **Create a smoke row.** Call `create_transaction` once with a seeded ordinary spending category such as `餐飲` (the seeded vocabulary also includes `交通`; never use `結清` for this step), an explicit `付款人`, and `分攤方式` `均分`.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/create_transaction
+   curl -X POST https://partner-ledger.pages.dev/api/create_transaction
    txn_id: client-generated UUID
    分類: 餐飲
    金額: the full amount paid at the counter
@@ -179,29 +199,41 @@ The weekly backup writes to a Drive folder named `Partner Ledger backups`.
 6. **Read the smoke row.** Call `list_transactions` and confirm that the row just written appears with `記帳人` stamped server-side and `來源` set to `pwa`.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/list_transactions
+   curl -X POST https://partner-ledger.pages.dev/api/list_transactions
    ```
 
 7. **Reverse the smoke row (沖銷).** Call `reverse_transaction` for the test row. Confirm that a mirror row appears linked by `沖銷txn_id`, while the original row is not edited in place or deleted. 沖銷 is the only app-side correction.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/reverse_transaction
+   curl -X POST https://partner-ledger.pages.dev/api/reverse_transaction
    original txn_id: the smoke row's txn_id
    ```
 
 8. **Settle a real 應付 direction (結清).** Call `settle` against a real outstanding 應付 direction and confirm that the resulting 結清 row carries the reserved 分類「結清」, its 付款人 is the debtor, its 分攤方式 is empty, and its amount may be partial but never beyond that direction's outstanding amount. 應付 is derived from non-voided rows and never stored; the two directions are tracked separately. There is no month, period, or closing concept.
 
    ```text
-   curl -X POST https://<pages-project-name>.pages.dev/api/settle
+   curl -X POST https://partner-ledger.pages.dev/api/settle
    ```
 
-9. **PWA install check.** Confirm that the app installs as `Partner Ledger 夥伴記帳` and that `short_name` is `記帳`.
+9. **PWA install check.** Confirm that the app installs as `狗狗記帳` and that `short_name` is `狗狗帳`.
 
 10. **Backup check.** Confirm that the weekly backup can write and that the Drive folder is named `Partner Ledger backups`.
 
 After the checklist, remove the smoke rows via 沖銷, or hand-edit them out as the sheet owner, so the shared book does not open with test data.
 
+The 2026-08-10 smoke rows were subsequently removed by the sheet owner; list_transactions over 2026-01-01..2026-12-31 returns an empty transactions array with both payable directions at 0, and schema_version is unchanged at da7e535836ce. The book is empty.
+
 ## 6. Access policy
+
+The current self-hosted application is named `Partner Ledger` and covers `partner-ledger.pages.dev`. Its AUD is `9d2bfc582e8eca1fb00a38c34790a1038b26df9bedfe487310bf821329842682`, and its session duration is `730h`.
+
+The team domain is `damp-brook-2531.cloudflareaccess.com`. It is account-wide and shared with the `solo-ledger` app.
+
+Exactly one Allow policy named `Partners` contains both partner emails.
+
+Verified on 2026-08-10: an unauthenticated plain POST to `/api/health` returns `302` to the Access login, while an XHR POST returns `401`.
+
+The current `設定` mapping is `夥伴:paulpeng118@gmail.com` → `cheng` and `夥伴:amyevaleo0830@gmail.com` → `翊`. `get_options` confirms partners `cheng` / `翊`, and this mapping agrees with the Access policy.
 
 Use ONE Cloudflare Access Allow policy containing BOTH partner emails from §4. Keep both emails within that one policy; do not create a separate policy for either email.
 
@@ -217,16 +249,15 @@ The following activation work has NOT been performed; CI is not current behaviou
 
 1. Copy the workflow files from `.github.template/workflows/` to `.github/workflows/`. GitHub only registers workflows under `.github/workflows/`, which is why nothing runs today.
 2. Set three repository Actions secrets, none of which currently exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CLASPRC_JSON` (the contents of the local `~/.clasprc.json` produced by a one-time `clasp login`).
-3. In `.github/workflows/deploy.yml`, replace the inherited solo-ledger Pages project name and the inherited `solo-ledger.pages.dev` smoke-check URL with the real partner-ledger values. Refer to the `<pages-project-name>` placeholder convention already used earlier in DEPLOY.md rather than inventing a name.
-4. In `.github/workflows/deploy-apps-script.yml`, replace the hardcoded `SCRIPT_ID` and `DEPLOYMENT_ID`. These were inherited verbatim from solo-ledger at the import commit and were not updated by the fork; check them before activating.
+3. In the inherited `deploy.yml` (the template at `.github.template/workflows/deploy.yml`, copied to `.github/workflows/deploy.yml` in item 1), replace the hardcoded Pages project name `solo-ledger` with `partner-ledger` and the smoke-check URL `https://solo-ledger.pages.dev` with `https://partner-ledger.pages.dev`.
+4. In `.github.template/workflows/deploy-apps-script.yml`, **CONFIRMED:** `SCRIPT_ID=1s0PmQ5YoBkw1WgkoMlWmZQW4JR1w5eA6VLB6P8B9C6cqez3rCsl5qfgj` and `DEPLOYMENT_ID=AKfycbw2fSloAC_xk6jXrdqmSUDxERJhjK1_FlMjMoa2RpXgbn4vgKkQDysgYQSPs2KEu81PKg` are still solo-ledger's, not partner-ledger's. Replace them with `SCRIPT_ID=1ILn1uVrpUk-SO7SyCaGxG20UOVj4eqVNKYrSmB-uGKV4_tbbSQ1YF5Ko` and `DEPLOYMENT_ID=AKfycbzsK256P__IeaEpVzaFwnLfvKk4RVBQTZ-vpHIUG0l71bTD-7zrG9y842SyI_Ku52hC` before activating CI.
 
 The inactive templates stay in the repo because the test suite parses those YAML files and asserts their structure, so the workflow definitions are tested for correctness even while no workflow is registered. Deleting them would break those tests.
 
 ## 8. Unverified / TBD
 
-- Whether a Cloudflare Pages project exists for `partner-ledger` at all, and under what name. No wrangler config, CNAME, or deployed URL appears anywhere in the repo except the inherited template.
-- Whether the `SCRIPT_ID` and `DEPLOYMENT_ID` in `.github.template/workflows/deploy-apps-script.yml` are partner-ledger's or still solo-ledger's. The values cannot be verified from the repo.
-- Whether `EXPENSE_API_SECRET` has been generated and stored in both homes. It is gitignored and absent from GitHub secrets; its presence in the Apps Script Script Properties is not observable from the repo.
-- Whether the Cloudflare Access application is configured. `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` values live only in the Pages environment, not in source.
+- `installWeeklyTriggers()` was reported run on 2026-08-10, but Apps Script exposes no trigger-inspection API, so it cannot be confirmed from outside the editor. It proves itself on first fire when the `Partner Ledger backups` folder appears in Drive; if that folder never appears after the first Monday 08:00 Asia/Taipei, the trigger did not install.
+- Smoke steps 2, 3, and 9 have not been executed because they need a real browser session or device.
+- Step 10 (backup) has not been verified. Note: `LEDGER_BACKUP_FOLDER_ID` being unset is expected behaviour — `weeklyBackup` calls `DriveApp.createFolder` and stores the ID on first run — so this is not an open problem.
 
 As each item is settled, replace it here and in the section that depends on it, rather than leaving both.

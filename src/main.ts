@@ -22,7 +22,7 @@ type View = 'entry' | 'list' | 'balance'
 
 const RECENT_DATE_FROM = '0001-01-01'
 const RECENT_DATE_TO = '9999-12-31'
-const SPLITS = ['均分', '全額對方', '全額自己'] as const
+const SPLITS = ['這筆平分', '幫狗狗付', '幫自己付'] as const
 
 function localDate(): string {
   const date = new Date()
@@ -72,8 +72,8 @@ function deriveStatementLines(
     if (transaction.分類 === '結清') {
       if (transaction.付款人 === direction.debtor) effect = -amount
     } else if (transaction.付款人 === direction.creditor) {
-      if (transaction.分攤方式 === '均分') effect = amount / 2
-      if (transaction.分攤方式 === '全額對方') effect = amount
+      if (transaction.分攤方式 === '這筆平分') effect = amount / 2
+      if (transaction.分攤方式 === '幫狗狗付') effect = amount
     }
 
     if (effect === 0) continue
@@ -144,15 +144,15 @@ export function mountApp(
         </div>
       </section>
       <section class="step-panel" data-step="payer" aria-labelledby="payer-heading" hidden>
-        <h2 id="payer-heading" class="step-question">誰付的？</h2>
+        <h2 id="payer-heading" class="step-question">誰付錢的？</h2>
         <div id="payer-buttons" class="giant-payer-grid"></div>
       </section>
       <section class="step-panel" data-step="split" aria-labelledby="split-heading" hidden>
-        <h2 id="split-heading" class="step-question">怎麼分？</h2>
+        <h2 id="split-heading" class="step-question">誰要出錢？</h2>
         <div id="split-buttons" class="split-stack"></div>
       </section>
       <section class="step-panel" data-step="details" aria-labelledby="details-heading" hidden>
-        <h2 id="details-heading" class="step-question">補充這筆帳</h2>
+        <h2 id="details-heading" class="step-question">帳務資訊</h2>
         <div class="step-content">
           <section class="form-section details-form">
             <div class="form-section-heading">分類</div>
@@ -160,7 +160,7 @@ export function mountApp(
             <div class="form-section-heading">交易對象 <span>選填</span></div>
             <div id="counterparty-suggestions" class="option-grid compact"></div>
             <label class="text-field">
-              <span>自訂交易對象</span>
+              <span>交易對象是誰</span>
               <input id="counterparty-input" type="text" autocomplete="off" />
             </label>
             <label class="text-field">
@@ -174,7 +174,7 @@ export function mountApp(
         </div>
       </section>
       <section class="step-panel" data-step="confirm" aria-labelledby="confirm-heading" hidden>
-        <h2 id="confirm-heading" class="step-question">確認這筆帳</h2>
+        <h2 id="confirm-heading" class="step-question">送出前最後確認</h2>
         <div class="step-content">
           <div id="confirm-card"></div>
           <p id="preview" class="preview" aria-live="polite"></p>
@@ -797,7 +797,7 @@ export function mountApp(
     const target = (event.target as HTMLElement)
       .closest<HTMLButtonElement>('[data-split]')
     const split = target?.dataset['split']
-    if (split !== '均分' && split !== '全額對方' && split !== '全額自己') return
+    if (split !== '這筆平分' && split !== '幫狗狗付' && split !== '幫自己付') return
     dispatch(State.selectSplit(state, split))
   })
 

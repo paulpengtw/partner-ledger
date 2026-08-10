@@ -15,7 +15,7 @@ function row(overrides: Row = {}): Row {
     日期: '2026-08-09',
     金額: 300,
     付款人: '小語',
-    分攤方式: '均分',
+    分攤方式: '這筆平分',
     分類: '餐飲',
     交易對象: '',
     記帳人: '阿哲',
@@ -43,29 +43,29 @@ describe('computePayables_', () => {
     ])
   })
 
-  it('均分 puts half the amount on the non-payer', () => {
+  it('這筆平分 puts half the amount on the non-payer', () => {
     expect(outstanding([row({ 金額: 300, 付款人: '小語' })])).toEqual({
       阿哲: 150,
       小語: 0,
     })
   })
 
-  it('keeps odd-amount 均分 halves exact to NT$0.5', () => {
+  it('keeps odd-amount 這筆平分 halves exact to NT$0.5', () => {
     expect(outstanding([row({ 金額: 101, 付款人: '小語' })])).toEqual({
       阿哲: 50.5,
       小語: 0,
     })
   })
 
-  it('全額對方 puts the whole amount on the non-payer', () => {
+  it('幫狗狗付 puts the whole amount on the non-payer', () => {
     expect(
-      outstanding([row({ 金額: 200, 付款人: '小語', 分攤方式: '全額對方' })]),
+      outstanding([row({ 金額: 200, 付款人: '小語', 分攤方式: '幫狗狗付' })]),
     ).toEqual({ 阿哲: 200, 小語: 0 })
   })
 
-  it('全額自己 creates no inter-partner debt', () => {
+  it('幫自己付 creates no inter-partner debt', () => {
     expect(
-      outstanding([row({ 金額: 200, 付款人: '小語', 分攤方式: '全額自己' })]),
+      outstanding([row({ 金額: 200, 付款人: '小語', 分攤方式: '幫自己付' })]),
     ).toEqual({ 阿哲: 0, 小語: 0 })
   })
 

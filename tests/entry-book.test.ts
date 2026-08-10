@@ -52,7 +52,7 @@ describe('partner book doPost', () => {
           日期: '2026-08-09',
           金額: 300,
           付款人: '小語',
-          分攤方式: '均分',
+          分攤方式: '這筆平分',
           分類: '餐飲',
           交易對象: '全聯',
           記帳人: '阿哲',
@@ -217,7 +217,7 @@ describe('partner book doPost', () => {
         date: '2026-07-01',
         amount: 100,
         payer: '阿哲',
-        split: '全額對方',
+        split: '幫狗狗付',
       })
 
       const response = await postList(harness, '2026-08-01', '2026-08-31')
@@ -228,7 +228,7 @@ describe('partner book doPost', () => {
           日期: '2026-08-01',
           金額: '300',
           付款人: '小語',
-          分攤方式: '均分',
+          分攤方式: '這筆平分',
           分類: '餐飲',
           交易對象: '全聯',
           記帳人: '阿哲',
@@ -252,7 +252,7 @@ describe('partner book doPost', () => {
         日期: '2026-08-03',
         金額: 300,
         付款人: '小語',
-        分攤方式: '均分',
+        分攤方式: '這筆平分',
         分類: '餐飲',
         記帳人: '小語',
         來源: 'pwa',
@@ -294,7 +294,7 @@ describe('partner book doPost', () => {
         日期: '2026-08-04',
         金額: 101,
         付款人: '小語',
-        分攤方式: '均分',
+        分攤方式: '這筆平分',
         分類: '餐飲',
         記帳人: '阿哲',
         來源: '手動',
@@ -320,7 +320,7 @@ describe('partner book doPost', () => {
           日期: '2026-08-06',
           金額: 10,
           付款人: '小語',
-          分攤方式: '全額對方',
+          分攤方式: '幫狗狗付',
           分類: '交通',
           記帳人: '小語',
           來源: 'pwa',
@@ -416,7 +416,7 @@ describe('partner book doPost', () => {
       await postCreate(harness, 'settle-both-002', {
         amount: 100,
         payer: '阿哲',
-        split: '全額對方',
+        split: '幫狗狗付',
       })
 
       const first = await postSettle(harness, 'settle-both-003', {
@@ -494,7 +494,7 @@ describe('partner book doPost', () => {
         日期: '2026-08-09',
         金額: 300,
         付款人: '小語',
-        分攤方式: '均分',
+        分攤方式: '這筆平分',
         分類: '餐飲',
         交易對象: '全聯',
         記帳人: '小語',
@@ -686,7 +686,7 @@ function createPayload(
       date: '2026-08-09',
       amount: 300,
       payer: '小語',
-      split: '均分',
+      split: '這筆平分',
       category: '餐飲',
       payee: '全聯',
       ...overrides,

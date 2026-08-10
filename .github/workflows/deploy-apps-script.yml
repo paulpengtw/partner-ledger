@@ -19,8 +19,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      SCRIPT_ID: 
-      DEPLOYMENT_ID: 
+      SCRIPT_ID: 1ILn1uVrpUk-SO7SyCaGxG20UOVj4eqVNKYrSmB-uGKV4_tbbSQ1YF5Ko
+      DEPLOYMENT_ID: AKfycbzsK256P__IeaEpVzaFwnLfvKk4RVBQTZ-vpHIUG0l71bTD-7zrG9y842SyI_Ku52hC
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

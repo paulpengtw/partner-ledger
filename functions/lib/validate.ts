@@ -2,7 +2,7 @@ export type Transaction = {
   date: string
   amount: number
   payer: string
-  split: '均分' | '全額對方' | '全額自己'
+  split: '這筆平分' | '幫狗狗付' | '幫自己付'
   category: string
   payee?: string
 }
@@ -26,7 +26,7 @@ type ReversalValidationResult =
   | { ok: true; reversal: Reversal }
   | { ok: false; error: string }
 
-const SPLITS = new Set(['均分', '全額對方', '全額自己'])
+const SPLITS = new Set(['這筆平分', '幫狗狗付', '幫自己付'])
 
 export function isValidUuid(value: unknown): value is string {
   return typeof value === 'string'

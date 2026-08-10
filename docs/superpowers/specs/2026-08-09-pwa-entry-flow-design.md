@@ -20,7 +20,7 @@ Options are applied from the synchronous `loadOptions().cached` result and then 
 
 - Amount uses `State.pressKey`; the next button is disabled until the parsed amount is positive.
 - Payer renders exactly the two configured partners with no fresh-form selection. `State.selectPayer` advances directly to split.
-- Split renders `均分`, `全額對方`, `全額自己` in that order. `均分` is the initial selection, and any choice advances directly to details.
+- Split renders `這筆平分`, `幫狗狗付`, `幫自己付` in that order. `這筆平分` is the initial selection, and any choice advances directly to details.
 - Details renders category choices, optional counterparty suggestions/free text, and a date defaulted to today. Its next button is disabled without a category.
 - Confirm renders editable rows using `data-edit`, a live `State.previewEffect` sentence, and submit/error feedback.
 - An auth-kind write failure and a failed session check show `#auth-overlay` with a reload button.

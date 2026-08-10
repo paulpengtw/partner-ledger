@@ -4,13 +4,21 @@ Partner Ledger is a two-person split ledger: a mobile PWA appends split-expense 
 
 ## 0. Current deploy status
 
-There is no active CI/CD. Deploys are manual today.
+CI/CD is active. Three workflows are registered under `.github/workflows/`:
 
-The workflow YAML lives in `.github.template/workflows/`, not `.github/workflows/`. GitHub therefore registers zero workflows on this repository, and zero Actions secrets are set.
+- `ci.yml`: tests on `pull_request` and on push to `main`.
+- `deploy.yml`: Cloudflare Pages release on push to `main` and `workflow_dispatch`.
+- `deploy-apps-script.yml`: `clasp push` plus redeploy on push to `main` touching `apps-script/**`, and `workflow_dispatch`.
 
-The three runs visible in the Actions tab all fired from the initial import commit while the workflows were still under `.github/`; none have run since the fork commit. Their presence is misleading.
+All three repository Actions secrets were set on 2026-08-10: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CLASPRC_JSON`.
 
-See §7 for how to activate CI.
+`deploy.yml` targets Pages project `partner-ledger` and smoke-checks `https://partner-ledger.pages.dev`.
+
+`deploy-apps-script.yml` carries the partner-ledger `SCRIPT_ID` `1ILn1uVrpUk-SO7SyCaGxG20UOVj4eqVNKYrSmB-uGKV4_tbbSQ1YF5Ko` and `DEPLOYMENT_ID` `AKfycbzsK256P__IeaEpVzaFwnLfvKk4RVBQTZ-vpHIUG0l71bTD-7zrG9y842SyI_Ku52hC`, replacing the inherited `solo-ledger` values.
+
+The `.github.template/` directory no longer exists. The tests in `tests/ci/` parse the live workflow files under `.github/workflows/`, so the workflow definitions stay under test.
+
+The manual procedures in §2 and §3 remain valid as the fallback / first-time path.
 
 ## 1. Prerequisites
 
@@ -183,7 +191,7 @@ Ordering warning: steps 7 and 8 must be run in the order settle (step 8) before 
    curl -X POST https://partner-ledger.pages.dev/api/get_options
    ```
 
-5. **Create a smoke row.** Call `create_transaction` once with a seeded ordinary spending category such as `餐飲` (the seeded vocabulary also includes `交通`; never use `結清` for this step), an explicit `付款人`, and `分攤方式` `均分`.
+5. **Create a smoke row.** Call `create_transaction` once with a seeded ordinary spending category such as `餐飲` (the seeded vocabulary also includes `交通`; never use `結清` for this step), an explicit `付款人`, and `分攤方式` `這筆平分`.
 
    ```text
    curl -X POST https://partner-ledger.pages.dev/api/create_transaction
@@ -191,7 +199,7 @@ Ordering warning: steps 7 and 8 must be run in the order settle (step 8) before 
    分類: 餐飲
    金額: the full amount paid at the counter
    付款人: explicit payer
-   分攤方式: 均分
+   分攤方式: 這筆平分
    ```
 
    `金額` is the full amount paid at the counter, never a share. Shares are derived and never stored. `txn_id` is a client-generated UUID and the idempotency key; resending the same `txn_id` must not double-append the row.
@@ -243,16 +251,14 @@ The Pages Function stamps `Cf-Access-Authenticated-User-Email` into each row as 
 
 The sheet owner additionally has an out-of-app hand-edit escape hatch; the partner with Viewer access does not.
 
-## 7. Activating CI (not yet done)
+## 7. Active CI operations
 
-The following activation work has NOT been performed; CI is not current behaviour.
+CI/CD is active through the workflows described in §0. The manual procedures in §2 and §3 remain valid as the fallback / first-time path.
 
-1. Copy the workflow files from `.github.template/workflows/` to `.github/workflows/`. GitHub only registers workflows under `.github/workflows/`, which is why nothing runs today.
-2. Set three repository Actions secrets, none of which currently exist: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `CLASPRC_JSON` (the contents of the local `~/.clasprc.json` produced by a one-time `clasp login`).
-3. In the inherited `deploy.yml` (the template at `.github.template/workflows/deploy.yml`, copied to `.github/workflows/deploy.yml` in item 1), replace the hardcoded Pages project name `solo-ledger` with `partner-ledger` and the smoke-check URL `https://solo-ledger.pages.dev` with `https://partner-ledger.pages.dev`.
-4. In `.github.template/workflows/deploy-apps-script.yml`, **CONFIRMED:** `SCRIPT_ID=1s0PmQ5YoBkw1WgkoMlWmZQW4JR1w5eA6VLB6P8B9C6cqez3rCsl5qfgj` and `DEPLOYMENT_ID=AKfycbw2fSloAC_xk6jXrdqmSUDxERJhjK1_FlMjMoa2RpXgbn4vgKkQDysgYQSPs2KEu81PKg` are still solo-ledger's, not partner-ledger's. Replace them with `SCRIPT_ID=1ILn1uVrpUk-SO7SyCaGxG20UOVj4eqVNKYrSmB-uGKV4_tbbSQ1YF5Ko` and `DEPLOYMENT_ID=AKfycbzsK256P__IeaEpVzaFwnLfvKk4RVBQTZ-vpHIUG0l71bTD-7zrG9y842SyI_Ku52hC` before activating CI.
+Operational caveats:
 
-The inactive templates stay in the repo because the test suite parses those YAML files and asserts their structure, so the workflow definitions are tested for correctness even while no workflow is registered. Deleting them would break those tests.
+1. `deploy-apps-script.yml` has no test gate. Any push touching `apps-script/**` re-points the live `/exec` deployment that the PWA calls. The §3 warning that `clasp push` alone does not change what `/exec` serves is what this workflow's `clasp deploy -i` step exists to handle.
+2. clasp refresh tokens expire (roughly 6 months unused, or on Google password change). When Apps Script deploys begin failing to authenticate, re-run `clasp login` locally and reset the `CLASPRC_JSON` secret.
 
 ## 8. Unverified / TBD
 

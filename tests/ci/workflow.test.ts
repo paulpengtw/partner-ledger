@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 const workflowPath = fileURLToPath(
-  new URL('../../.github.template/workflows/ci.yml', import.meta.url),
+  new URL('../../.github/workflows/ci.yml', import.meta.url),
 )
 const rawText = (() => {
   try {

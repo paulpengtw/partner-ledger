@@ -11,7 +11,7 @@ const valid = {
   date: '2026-08-09',
   amount: 300,
   payer: '小語',
-  split: '均分',
+  split: '這筆平分',
   category: '餐飲',
   payee: '全聯',
 } as const
@@ -33,7 +33,7 @@ describe('validateTransaction', () => {
     })
   })
 
-  it.each(['均分', '全額對方', '全額自己'] as const)(
+  it.each(['這筆平分', '幫狗狗付', '幫自己付'] as const)(
     'accepts the split %s',
     split => {
       expect(validateTransaction({ ...valid, split })).toEqual({

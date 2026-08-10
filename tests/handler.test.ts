@@ -21,7 +21,7 @@ const transaction = {
   date: '2026-08-09',
   amount: 300,
   payer: '小語',
-  split: '均分',
+  split: '這筆平分',
   category: '餐飲',
   payee: '全聯',
 } as const

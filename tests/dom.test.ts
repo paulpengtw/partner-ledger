@@ -48,7 +48,7 @@ function mount(result = LIST_RESULT): void {
   })
 }
 
-function enterConfirm(split = '均分'): void {
+function enterConfirm(split = '這筆平分'): void {
   for (const key of ['3', '0', '0']) click(`#keypad [data-key="${key}"]`)
   click('#next-amount')
   click('#payer-buttons [data-payer="小語"]')
@@ -125,13 +125,13 @@ describe('partner entry wizard', () => {
       '#split-buttons [data-split]',
     )
     expect([...splitButtons].map(button => button.textContent)).toEqual([
-      '均分',
-      '全額對方',
-      '全額自己',
+      '這筆平分',
+      '幫狗狗付',
+      '幫自己付',
     ])
     expect(splitButtons[0]?.getAttribute('aria-pressed')).toBe('true')
 
-    click('#split-buttons [data-split="均分"]')
+    click('#split-buttons [data-split="這筆平分"]')
     expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
       .toBe('details')
   })
@@ -147,7 +147,7 @@ describe('partner entry wizard', () => {
     expect(document.querySelector('#confirm-card')?.textContent)
       .toContain('小語')
     expect(document.querySelector('#confirm-card')?.textContent)
-      .toContain('均分')
+      .toContain('這筆平分')
     expect(document.querySelector('#confirm-card')?.textContent)
       .toContain('餐飲')
     expect(document.querySelector('#preview')?.textContent)
@@ -157,7 +157,7 @@ describe('partner entry wizard', () => {
 
   it('shows no payable for the full-self split', () => {
     mount()
-    enterConfirm('全額自己')
+    enterConfirm('幫自己付')
 
     expect(document.querySelector('#preview')?.textContent)
       .toContain('不產生應付')
@@ -193,12 +193,12 @@ describe('partner entry wizard', () => {
       date: '2026-08-09',
       amount: 300,
       payer: '小語',
-      split: '均分',
+      split: '這筆平分',
       category: '餐飲',
     }, FIXED_UUID)
     expect(document.querySelector('#entry-view')?.getAttribute('data-active-step'))
       .toBe('amount')
-    expect(document.querySelector('#split-buttons [data-split="均分"]')
+    expect(document.querySelector('#split-buttons [data-split="這筆平分"]')
       ?.getAttribute('aria-pressed')).toBe('true')
     await vi.waitFor(() => {
       expect(apiMocks.listTransactions).toHaveBeenCalledTimes(2)

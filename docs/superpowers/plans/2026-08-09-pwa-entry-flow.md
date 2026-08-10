@@ -14,7 +14,7 @@
 - Use `mountApp(root, deps)` and return an unmount function.
 - Use the full list range `0001-01-01` through `9999-12-31`.
 - Keep one idempotency key for a failed submit retry; mint it through `State.beginSubmit`.
-- Never preselect either payer on a fresh form; keep `均分` preselected.
+- Never preselect either payer on a fresh form; keep `這筆平分` preselected.
 - Do not reuse prototype code; use only its visual/layout intent.
 - Make only minimal stylesheet additions and preserve unrelated worktree changes.
 
@@ -28,7 +28,7 @@
 **Interfaces:**
 - Fixtures produce `CounterpartyOptions` with `partners: ['阿哲', '小語']`, `categories: ['餐飲', '交通']`, and `counterparties: ['全聯']`.
 - The mocked API exposes `authCheck`, `listTransactions`, `loadOptions`, `reverseTransaction`, and `submitTransaction`.
-- `LIST_RESULT` contains three `LedgerTransaction` rows: normal 300/均分/小語, one `voided: true`, and one blank-id hand row with `來源: '手動'`; its payables directions are 阿哲→小語 outstanding 150 and the mirror direction outstanding 0.
+- `LIST_RESULT` contains three `LedgerTransaction` rows: normal 300/這筆平分/小語, one `voided: true`, and one blank-id hand row with `來源: '手動'`; its payables directions are 阿哲→小語 outstanding 150 and the mirror direction outstanding 0.
 
 - [ ] **Step 1: Replace legacy options fixtures**
 
@@ -57,11 +57,11 @@ Mount with cached options, a never-resolving refresh by default, `today: () => '
 Cover these independent behaviors in named tests:
 
 1. Fresh amount step is active; keypad `3`, `0`, `0` displays 300; amount next reaches payer; exactly two payer buttons are rendered from options and both have `aria-pressed="false"`.
-2. Clicking 小語 reaches split; 均分 is first and pressed; clicking 均分 reaches details.
-3. Selecting 餐飲, then details next, reaches confirm; summary includes 300, 小語, 均分, 餐飲; preview includes `阿哲 應付 小語` and `150`.
-4. Full flow with 全額自己 shows `不產生應付` in `#preview`.
+2. Clicking 小語 reaches split; 這筆平分 is first and pressed; clicking 這筆平分 reaches details.
+3. Selecting 餐飲, then details next, reaches confirm; summary includes 300, 小語, 這筆平分, 餐飲; preview includes `阿哲 應付 小語` and `150`.
+4. Full flow with 幫自己付 shows `不產生應付` in `#preview`.
 5. Editing `data-edit="payer"` returns to payer; choosing 阿哲 returns straight to confirm and updates summary/preview to `小語 應付 阿哲`.
-6. Submit sends `{ date: '2026-08-09', amount: 300, payer: '小語', split: '均分', category: '餐飲' }` without `payee`, with the fixed UUID; success returns to amount with 均分 pressed and calls list refresh.
+6. Submit sends `{ date: '2026-08-09', amount: 300, payer: '小語', split: '這筆平分', category: '餐飲' }` without `payee`, with the fixed UUID; success returns to amount with 這筆平分 pressed and calls list refresh.
 7. A backend error writes the server message to `#submit-note`; a second submit sends the identical idempotency key.
 8. An auth-kind submit result makes `#auth-overlay` visible.
 9. List view renders three rows, marks the voided row `.voided`, omits reversal for the blank-id hand row, and refreshes through `#refresh-transactions`.

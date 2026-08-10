@@ -15,7 +15,7 @@ const TRANSACTION: Transaction = {
   date: '2026-07-27',
   amount: 260,
   payer: '小語',
-  split: '均分',
+  split: '這筆平分',
   category: '餐飲',
   payee: '全聯',
 }
@@ -76,7 +76,7 @@ const LEDGER_TRANSACTION: LedgerTransaction = {
   日期: '2026-07-27',
   金額: '260',
   付款人: '小語',
-  分攤方式: '均分',
+  分攤方式: '這筆平分',
   分類: '餐飲',
   交易對象: '全聯',
   記帳人: '小語',

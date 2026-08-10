@@ -35,17 +35,17 @@ function amountState(amount: string): FormState {
 function submitReady(): FormState {
   let state = amountState('300')
   state = selectPayer(state, '小語')
-  state = selectSplit(state, '均分')
+  state = selectSplit(state, '這筆平分')
   state = selectCategory(state, '餐飲')
   state = setCounterparty(state, '全聯')
   return state
 }
 
 describe('fresh form and wizard navigation', () => {
-  it('preselects 均分 on a fresh form', () => {
+  it('preselects 這筆平分 on a fresh form', () => {
     expect(initialState(DATE)).toMatchObject({
       step: 'amount',
-      split: '均分',
+      split: '這筆平分',
       payer: null,
       category: null,
     })
@@ -70,8 +70,8 @@ describe('fresh form and wizard navigation', () => {
     const afterPayer = selectPayer(goNext(initialState(DATE)), '小語')
     expect(afterPayer).toMatchObject({ payer: '小語', step: 'split' })
 
-    const afterSplit = selectSplit(afterPayer, '全額對方')
-    expect(afterSplit).toMatchObject({ split: '全額對方', step: 'details' })
+    const afterSplit = selectSplit(afterPayer, '幫狗狗付')
+    expect(afterSplit).toMatchObject({ split: '幫狗狗付', step: 'details' })
   })
 
   it('returns to confirm after selecting a payer while editing from confirm', () => {
@@ -90,7 +90,7 @@ describe('fresh form and wizard navigation', () => {
 })
 
 describe('derived preview', () => {
-  it('derives a half share for 300 均分 paid by 小語', () => {
+  it('derives a half share for 300 這筆平分 paid by 小語', () => {
     const state = selectPayer(amountState('300'), '小語')
 
     expect(previewEffect(state, PARTNERS)).toEqual({
@@ -100,7 +100,7 @@ describe('derived preview', () => {
     })
   })
 
-  it('keeps odd 均分 amounts exact to the half dollar', () => {
+  it('keeps odd 這筆平分 amounts exact to the half dollar', () => {
     const state = selectPayer(amountState('101'), '小語')
 
     expect(previewEffect(state, PARTNERS)).toEqual({
@@ -111,8 +111,8 @@ describe('derived preview', () => {
   })
 
   it.each([
-    ['全額對方', 300],
-    ['全額自己', 0],
+    ['幫狗狗付', 300],
+    ['幫自己付', 0],
   ] as const)('derives %s as %s for the payer', (split, amount) => {
     let state = selectPayer(amountState('300'), '小語')
     state = selectSplit(state, split)
@@ -149,7 +149,7 @@ describe('submit gating and transaction construction', () => {
       date: DATE,
       amount: 300,
       payer: '小語',
-      split: '均分',
+      split: '這筆平分',
       category: '餐飲',
     })
     expect(buildTransaction(state)).not.toHaveProperty('payee')
@@ -162,7 +162,7 @@ describe('submit gating and transaction construction', () => {
       date: DATE,
       amount: 300,
       payer: '小語',
-      split: '均分',
+      split: '這筆平分',
       category: '餐飲',
       payee: '全聯',
     })
@@ -212,10 +212,10 @@ describe('submission lifecycle', () => {
     })
   })
 
-  it('resetForNext starts a new form with 均分 selected', () => {
-    const reset = resetForNext({ ...submitReady(), split: '全額自己' }, '2026-07-28')
+  it('resetForNext starts a new form with 這筆平分 selected', () => {
+    const reset = resetForNext({ ...submitReady(), split: '幫自己付' }, '2026-07-28')
 
     expect(reset).toEqual(initialState('2026-07-28'))
-    expect(reset).toMatchObject({ step: 'amount', split: '均分', returnToConfirm: false })
+    expect(reset).toMatchObject({ step: 'amount', split: '這筆平分', returnToConfirm: false })
   })
 })

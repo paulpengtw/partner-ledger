@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 const workflowPath = fileURLToPath(
-  new URL('../../.github.template/workflows/deploy.yml', import.meta.url),
+  new URL('../../.github/workflows/deploy.yml', import.meta.url),
 )
 const rawText = (() => {
   try {
@@ -66,7 +66,7 @@ describe('.github/workflows/deploy.yml', () => {
     expect(wranglerIdx).toBeGreaterThan(buildIdx)
 
     const wranglerStep = runSteps[wranglerIdx]
-    expect(wranglerStep.run).toContain('--project-name=solo-ledger')
+    expect(wranglerStep.run).toContain('--project-name=partner-ledger')
 
     expect(wranglerStep.env).toMatchObject({
       CLOUDFLARE_API_TOKEN: '${{ secrets.CLOUDFLARE_API_TOKEN }}',
@@ -95,7 +95,7 @@ describe('.github/workflows/deploy.yml', () => {
     const gateRun = gateStep.run as string
     expect(gateRun).toContain('302')
     expect(gateRun).toContain('401')
-    expect(gateRun).toContain('https://solo-ledger.pages.dev')
+    expect(gateRun).toContain('https://partner-ledger.pages.dev')
   })
 
   it('grants only contents: read at the top-level permissions', () => {

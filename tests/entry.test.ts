@@ -11,7 +11,7 @@ function createInput(overrides: EntryInput = {}): EntryInput {
     date: '2026-08-09',
     amount: 300,
     payer: '小語',
-    split: '均分',
+    split: '這筆平分',
     category: '餐飲',
     payee: '全聯',
     enterer: '阿哲',
@@ -39,13 +39,13 @@ describe('ENTRY_HEADERS', () => {
 })
 
 describe('expandEntry_ create', () => {
-  it('expands a 均分 expense into one flat row', () => {
+  it('expands a 這筆平分 expense into one flat row', () => {
     expect(expandEntry_(createInput())).toEqual({
       txn_id: '11111111-1111-4111-8111-111111111111',
       日期: '2026-08-09',
       金額: 300,
       付款人: '小語',
-      分攤方式: '均分',
+      分攤方式: '這筆平分',
       分類: '餐飲',
       交易對象: '全聯',
       記帳人: '阿哲',
@@ -58,7 +58,7 @@ describe('expandEntry_ create', () => {
     expect(expandEntry_(createInput({ payee: undefined }))['交易對象']).toBe('')
   })
 
-  it.each(['全額對方', '全額自己'])('accepts 分攤方式 %s', (split) => {
+  it.each(['幫狗狗付', '幫自己付'])('accepts 分攤方式 %s', (split) => {
     expect(expandEntry_(createInput({ split }))['分攤方式']).toBe(split)
   })
 

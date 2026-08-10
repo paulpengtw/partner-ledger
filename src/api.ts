@@ -1,4 +1,4 @@
-export type Split = '均分' | '全額對方' | '全額自己'
+export type Split = '這筆平分' | '幫狗狗付' | '幫自己付'
 
 export type Transaction = {
   date: string

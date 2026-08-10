@@ -13,7 +13,7 @@ var ENTRY_HEADERS = [
 var ENTRY_SHEET_NAME = '帳目';
 var CATEGORY_SHEET_NAME = '分類';
 var PARTNER_SETTING_PREFIX = '夥伴:';
-var SPLIT_MODES = ['均分', '全額對方', '全額自己'];
+var SPLIT_MODES = ['這筆平分', '幫狗狗付', '幫自己付'];
 var SETTLEMENT_CATEGORY = '結清';
 
 var MAX_LIST_TRANSACTIONS = 200;
@@ -1153,9 +1153,9 @@ function computePayables_(rows, partners) {
 
     if (String(row['分類'] || '') === SETTLEMENT_CATEGORY) {
       owedBy[payer] -= amount;
-    } else if (row['分攤方式'] === '均分') {
+    } else if (row['分攤方式'] === '這筆平分') {
       owedBy[other] += amount / 2;
-    } else if (row['分攤方式'] === '全額對方') {
+    } else if (row['分攤方式'] === '幫狗狗付') {
       owedBy[other] += amount;
     }
   }

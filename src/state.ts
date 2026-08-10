@@ -23,7 +23,7 @@ export function initialState(date: string): FormState {
     amountText: '',
     date,
     payer: null,
-    split: '均分',
+    split: '這筆平分',
     category: null,
     counterparty: '',
     status: 'idle',
@@ -142,9 +142,9 @@ export function previewEffect(
   return {
     debtor,
     creditor: state.payer,
-    amount: state.split === '均分'
+    amount: state.split === '這筆平分'
       ? amount / 2
-      : state.split === '全額對方' ? amount : 0,
+      : state.split === '幫狗狗付' ? amount : 0,
   }
 }
 

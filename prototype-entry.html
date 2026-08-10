@@ -732,9 +732,9 @@
       const partners = ['阿哲', '小語'];
       const categories = ['餐飲', '交通', '日用品', '娛樂', '帳單', '其他'];
       const splitLabels = {
-        equal: '均分',
-        other: '全額對方',
-        self: '全額自己',
+        equal: '這筆平分',
+        other: '幫狗狗付',
+        self: '幫自己付',
       };
       const variantLabels = {
         A: 'A — 單頁表單',
@@ -747,8 +747,8 @@
         C: '用日常說法一次選好誰付、怎麼分。',
       };
       const scenarios = [
-        { key: 'zhe-equal', label: '阿哲付，均分', payer: '阿哲', split: 'equal' },
-        { key: 'yu-equal', label: '小語付，均分', payer: '小語', split: 'equal' },
+        { key: 'zhe-equal', label: '阿哲付，這筆平分', payer: '阿哲', split: 'equal' },
+        { key: 'yu-equal', label: '小語付，這筆平分', payer: '小語', split: 'equal' },
         { key: 'zhe-other', label: '阿哲墊小語的', payer: '阿哲', split: 'other' },
         { key: 'yu-other', label: '小語墊阿哲的', payer: '小語', split: 'other' },
         { key: 'zhe-self', label: '阿哲自己的', payer: '阿哲', split: 'self' },
@@ -911,7 +911,7 @@
         };
         return '<section class="option-group" aria-labelledby="split-heading">' +
           '<div class="section-heading">' +
-          '<h2 id="split-heading">分攤方式 <span>均分預設</span></h2>' +
+          '<h2 id="split-heading">分攤方式 <span>這筆平分預設</span></h2>' +
           '<span class="required-mark">三選一</span>' +
           '</div>' +
           '<div class="split-chip-row">' +
@@ -1059,7 +1059,7 @@
         }
         if (formState.wizardStep === 3) {
           return '<h2 class="wizard-question">怎麼分？</h2>' +
-            '<p class="wizard-supporting">均分先放第一個，也可以改成全額由一方負擔。</p>' +
+            '<p class="wizard-supporting">這筆平分先放第一個，也可以改成全額由一方負擔。</p>' +
             renderStackedSplits();
         }
         return '<h2 class="wizard-question">最後確認</h2>' +

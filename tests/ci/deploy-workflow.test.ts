@@ -1,19 +1,7 @@
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { parse } from 'yaml'
+import { loadWorkflow } from './workflows'
 
-const workflowPath = fileURLToPath(
-  new URL('../../.github/workflows/deploy.yml', import.meta.url),
-)
-const rawText = (() => {
-  try {
-    return readFileSync(workflowPath, 'utf-8')
-  } catch {
-    return ''
-  }
-})()
-const doc: any = rawText ? parse(rawText) : null
+const { raw: rawText, doc } = loadWorkflow('deploy.yml')
 
 describe('.github/workflows/deploy.yml', () => {
   it('triggers on push to main and workflow_dispatch but not pull_request', () => {

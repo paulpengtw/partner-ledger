@@ -161,7 +161,7 @@ Testing note: probing `/exec` with `curl -L` is misleading. On success Apps Scri
 
 ## 5. Smoke checklist
 
-Steps 1, 4, 5, 6, 7 and 8 were executed and passed on 2026-08-10 against the live deployment. Specifically verified: idempotent replay of a `txn_id` returned `already: true` and appended no second row; `記帳人` was stamped server-side and `來源` was `pwa`; over-settlement was refused with `over-settlement: amount 1150 exceeds outstanding 150`; the `結清` row carried `分類` `結清`, `付款人` the debtor, and an empty `分攤方式`; and 沖銷 appended mirror rows linked by `沖銷txn_id` while leaving both originals unedited and undeleted.
+Steps 1, 4, 5, 6, 7 and 8 were executed and passed on 2026-08-10 against the live deployment. Specifically verified: idempotent replay of a `txn_id` returned `already: true` and appended no second row; `記帳人` was stamped server-side and `來源` was `web-app`; over-settlement was refused with `over-settlement: amount 1150 exceeds outstanding 150`; the `結清` row carried `分類` `結清`, `付款人` the debtor, and an empty `分攤方式`; and 沖銷 appended mirror rows linked by `沖銷txn_id` while leaving both originals unedited and undeleted.
 
 Ordering warning: steps 7 and 8 must be run in the order settle (step 8) before reverse (step 7). `computePayables_` skips voided rows, so reversing the spending row first drops the outstanding balance to zero and leaves step 8 with no real 應付 direction to settle against.
 
@@ -204,7 +204,7 @@ Ordering warning: steps 7 and 8 must be run in the order settle (step 8) before 
 
    `金額` is the full amount paid at the counter, never a share. Shares are derived and never stored. `txn_id` is a client-generated UUID and the idempotency key; resending the same `txn_id` must not double-append the row.
 
-6. **Read the smoke row.** Call `list_transactions` and confirm that the row just written appears with `記帳人` stamped server-side and `來源` set to `pwa`.
+6. **Read the smoke row.** Call `list_transactions` and confirm that the row just written appears with `記帳人` stamped server-side and `來源` set to `web-app`.
 
    ```text
    curl -X POST https://partner-ledger.pages.dev/api/list_transactions

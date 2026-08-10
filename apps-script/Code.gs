@@ -1027,7 +1027,7 @@ function expandCreateEntry_(input) {
     category: input.category,
     payee: input.payee,
     enterer: input.enterer,
-    source: 'pwa',
+    source: 'web-app',
     reversalTxnId: '',
   });
 }

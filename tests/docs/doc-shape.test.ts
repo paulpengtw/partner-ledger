@@ -19,16 +19,11 @@ const NEAR_COPY = 0.9
 /**
  * Docs that are known to be clobbered, mapped to the issue that reconstructs
  * each one. A quarantined doc is exempt from the shape guard, and only from
- * that one. Nothing may be parked here quietly: the guards below fail if an
- * entry names a doc that no longer exists, omits its issue, or outlives the
- * defect it was opened for.
+ * that one. Empty is the resting state: nothing may be parked here quietly,
+ * and the guards below fail if an entry names a doc that no longer exists,
+ * omits its issue, or outlives the defect it was opened for.
  */
-const QUARANTINE = new Map([
-  [
-    'docs/partner-ledger-spec.md',
-    'https://github.com/paulpengtw/partner-ledger/issues/7',
-  ],
-])
+const QUARANTINE = new Map<string, string>()
 
 function opensAsMarkdown(path: string): boolean {
   const [opening = ''] = significantLines(readTracked(path))

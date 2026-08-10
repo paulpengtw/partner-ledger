@@ -4,21 +4,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#17342d" />
+    <meta name="theme-color" content="#231309" />
     <title>夥伴分攤記帳 · Prototype</title>
     <link rel="stylesheet" href="/src/styles.css">
     <style>
       :root {
-        --prototype-ink: #17342d;
-        --prototype-muted: #64766f;
-        --prototype-accent: #a8ef76;
-        --prototype-accent-strong: #88d957;
-        --prototype-background: #f3f2ec;
+        --prototype-ink: #231309;
+        --prototype-muted: #78665a;
+        --prototype-accent: #ffb13d;
+        --prototype-accent-strong: #a84e06;
+        --prototype-background: #f7f1e8;
         --prototype-surface: #ffffff;
-        --prototype-line: #dfe5e1;
-        --prototype-warning: #fff3cb;
-        --prototype-warning-ink: #735300;
-        --prototype-shadow: 0 10px 28px rgb(23 52 45 / 8%);
+        --prototype-line: #e7dccf;
+        --prototype-warning: #ffe7bc;
+        --prototype-warning-ink: #6e4200;
+        --prototype-shadow: 0 10px 28px rgb(35 19 9 / 8%);
       }
 
       body {
@@ -144,7 +144,7 @@
         border-radius: var(--radius-large);
         background: var(--prototype-ink);
         color: var(--prototype-surface);
-        box-shadow: 0 12px 30px rgb(23 52 45 / 18%);
+        box-shadow: 0 12px 30px rgb(35 19 9 / 18%);
       }
 
       .amount-card .field-label > span,
@@ -168,12 +168,12 @@
       }
 
       .amount-input::placeholder {
-        color: rgb(168 239 118 / 42%);
+        color: rgb(255 177 61 / 42%);
       }
 
       .amount-input:focus-visible {
         border-radius: 10px;
-        box-shadow: 0 0 0 3px rgb(168 239 118 / 38%);
+        box-shadow: 0 0 0 3px rgb(255 177 61 / 38%);
       }
 
       .amount-input::-webkit-inner-spin-button,
@@ -271,7 +271,7 @@
       .back-button:focus-visible,
       .variant-switcher button:focus-visible,
       .prototype-submit:focus-visible {
-        outline: 3px solid rgb(136 217 87 / 42%);
+        outline: 3px solid rgb(168 78 6 / 42%);
         outline-offset: 2px;
       }
 
@@ -318,7 +318,7 @@
 
       .text-field input:focus {
         border-color: var(--prototype-accent-strong);
-        box-shadow: 0 0 0 3px rgb(136 217 87 / 20%);
+        box-shadow: 0 0 0 3px rgb(168 78 6 / 20%);
       }
 
       .optional-note {
@@ -331,9 +331,9 @@
         display: grid;
         gap: 8px;
         padding: 15px 16px;
-        border: 1px dashed #b8c9bb;
+        border: 1px dashed #ded0be;
         border-radius: var(--radius-large);
-        background: #f7fbf3;
+        background: #fdf8f0;
       }
 
       .derivation-heading {
@@ -385,7 +385,7 @@
         border-radius: var(--radius-large);
         background: var(--prototype-ink);
         color: var(--prototype-accent);
-        box-shadow: 0 10px 24px rgb(23 52 45 / 20%);
+        box-shadow: 0 10px 24px rgb(35 19 9 / 20%);
         font-size: 18px;
         font-weight: 850;
       }
@@ -445,7 +445,7 @@
       .progress-dot {
         height: 5px;
         border-radius: 999px;
-        background: #dce4dd;
+        background: #ede4d8;
       }
 
       .progress-dot.active {
@@ -535,7 +535,7 @@
         border-radius: var(--radius-large);
         background: var(--prototype-ink);
         color: var(--prototype-surface);
-        box-shadow: 0 12px 30px rgb(23 52 45 / 18%);
+        box-shadow: 0 12px 30px rgb(35 19 9 / 18%);
       }
 
       .scenario-card .section-heading h2,
@@ -645,7 +645,7 @@
 
       .recent-derived {
         padding-top: 7px;
-        border-top: 1px solid #e4eae4;
+        border-top: 1px solid #f1e9de;
         color: var(--prototype-ink);
         font-size: 14px;
         font-weight: 800;
@@ -664,7 +664,7 @@
         padding: 5px;
         transform: translateX(-50%);
         border-radius: 999px;
-        background: #090b0a;
+        background: #120c07;
         color: #ffffff;
         box-shadow: 0 12px 30px rgb(0 0 0 / 28%);
       }

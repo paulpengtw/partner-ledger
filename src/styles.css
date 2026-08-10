@@ -1,17 +1,34 @@
 :root {
   color-scheme: light;
-  --ink: #17342d;
-  --muted: #64766f;
-  --accent: #a8ef76;
-  --accent-strong: #88d957;
-  --background: #f3f2ec;
+
+  /* Warm pole — 應收 / active / brand. */
+  --ink: #231309;
+  --muted: #78665a;
+  --accent: #ffb13d;
+  --accent-strong: #a84e06;
+  --background: #f7f1e8;
   --surface: #ffffff;
-  --warning: #fff3cb;
-  --warning-ink: #735300;
-  --error: #a82424;
+
+  /* Cool pole — 應付 / settled / focus. Warm-vs-cool sits on the blue-yellow
+     axis, the one hue contrast that survives protanopia, deuteranopia and
+     tritanopia alike. No state in this app is ever red-vs-green. */
+  --cool: #0a5c8a;
+  --cool-bright: #7dc8f0;
+  --cool-soft: #eaf4fb;
+
+  /* Caution and failure carry a shape cue as well as a hue, so neither
+     depends on colour alone: warnings get a rule, errors get wording. */
+  --warning: #ffe7bc;
+  --warning-ink: #6e4200;
+  --error: #9e1b32;
+
+  --line: #e7dccf;
+  --line-strong: #d8c8b6;
+  --line-soft: #f1e9de;
+  --track: #ede4d8;
   --radius-large: 22px;
   --radius-medium: 16px;
-  --shadow: 0 10px 28px rgb(23 52 45 / 7%);
+  --shadow: 0 10px 28px rgb(35 19 9 / 8%);
 }
 
 *,
@@ -55,6 +72,14 @@ button {
   touch-action: manipulation;
 }
 
+/* Two-layer ring: the paper halo carries it on dark fills, the blue carries
+   it on light ones, so one rule stays visible on every surface. */
+:focus-visible {
+  outline: 3px solid var(--cool);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -85,6 +110,7 @@ h3 {
 #schema-banner {
   margin-bottom: 12px;
   padding: 11px 14px;
+  border-left: 4px solid var(--accent-strong);
   border-radius: var(--radius-medium);
   background: var(--warning);
   color: var(--warning-ink);
@@ -199,7 +225,7 @@ h3 {
   min-height: 48px;
   overflow: hidden;
   padding: 8px 10px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
   font-size: 14px;
@@ -236,7 +262,7 @@ h3 {
   width: 100%;
   min-height: 50px;
   padding: 0 14px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   outline: none;
   background: var(--background);
@@ -246,8 +272,16 @@ h3 {
 }
 
 .text-field input:focus {
-  border-color: var(--accent-strong);
-  box-shadow: 0 0 0 3px rgb(136 217 87 / 20%);
+  border-color: var(--cool);
+  box-shadow: 0 0 0 3px rgb(10 92 138 / 22%);
+}
+
+/* `.text-field input` sets `outline: none`, which out-specifies the global
+   ring — restate it here so inputs match every other control. */
+.text-field input:focus-visible {
+  outline: 3px solid var(--cool);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 #status-message {
@@ -273,7 +307,7 @@ h3 {
   border-radius: var(--radius-large);
   background: var(--ink);
   color: var(--accent);
-  box-shadow: 0 10px 24px rgb(23 52 45 / 20%);
+  box-shadow: 0 10px 24px rgb(35 19 9 / 20%);
   font-size: 18px;
   font-weight: 800;
 }
@@ -306,7 +340,7 @@ h3 {
 .recent-toolbar button {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
   font-size: 14px;
@@ -409,7 +443,7 @@ h3 {
   gap: 5px;
   padding: 5px;
   border-radius: var(--radius-large);
-  background: #e1e8e1;
+  background: var(--track);
 }
 
 .balance-direction-tabs button {
@@ -454,7 +488,7 @@ h3 {
 }
 
 #outstanding-amount.over-settled {
-  color: #ffb4a8;
+  color: var(--cool-bright);
 }
 
 .balance-unit {
@@ -482,7 +516,7 @@ h3 {
 
 .statement-list {
   display: grid;
-  border-top: 1px solid #dfe5e1;
+  border-top: 1px solid var(--line);
 }
 
 .statement-line {
@@ -492,7 +526,7 @@ h3 {
   align-items: center;
   min-height: 70px;
   padding: 10px 0;
-  border-bottom: 1px solid #dfe5e1;
+  border-bottom: 1px solid var(--line);
 }
 
 .statement-date {
@@ -535,9 +569,16 @@ h3 {
   font-size: 13px;
 }
 
+/* Settled lines read as a group by tint as well as by hue, so the
+   distinction survives greyscale and every form of colour blindness. */
+.statement-settlement {
+  background: var(--cool-soft);
+  box-shadow: inset 3px 0 0 var(--cool);
+}
+
 .statement-settlement .statement-effect,
 .statement-settlement .statement-running {
-  color: #2e7d52;
+  color: var(--cool);
 }
 
 .statement-running {
@@ -561,10 +602,10 @@ h3 {
   gap: 10px;
   margin: 4px -4px 0;
   padding: 11px;
-  border: 1px solid #cbd8cd;
+  border: 1px solid var(--line);
   border-radius: 19px;
   background: rgb(255 255 255 / 96%);
-  box-shadow: 0 12px 28px rgb(23 52 45 / 15%);
+  box-shadow: 0 12px 28px rgb(35 19 9 / 15%);
   backdrop-filter: blur(12px);
 }
 
@@ -606,7 +647,7 @@ h3 {
   width: 100%;
   min-height: 46px;
   padding: 0 12px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--background);
   color: var(--ink);
@@ -646,7 +687,7 @@ h3 {
   width: 100%;
   min-height: 44px;
   margin-top: 12px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface);
   color: var(--ink);
@@ -689,8 +730,8 @@ h3 {
   width: max-content;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--warning);
-  color: var(--warning-ink);
+  background: var(--cool);
+  color: var(--surface);
   font-size: 12px;
   font-weight: 800;
 }
@@ -741,7 +782,7 @@ h3 {
   align-items: end;
   padding: 16px;
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  background: rgb(23 52 45 / 45%);
+  background: rgb(35 19 9 / 45%);
 }
 
 .settle-card {
@@ -750,7 +791,7 @@ h3 {
   padding: 20px;
   border-radius: var(--radius-large);
   background: var(--surface);
-  box-shadow: 0 20px 50px rgb(23 52 45 / 28%);
+  box-shadow: 0 20px 50px rgb(35 19 9 / 28%);
 }
 
 #settle-target,
@@ -762,6 +803,7 @@ h3 {
 .irreversible-warning {
   margin-bottom: 16px;
   padding: 11px 13px;
+  border-left: 4px solid var(--accent-strong);
   border-radius: 12px;
   background: var(--warning);
   color: var(--warning-ink);
@@ -773,7 +815,7 @@ h3 {
   width: 100%;
   min-height: 50px;
   padding: 0 14px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--background);
   color: var(--ink);
@@ -975,7 +1017,7 @@ h3 {
   border-radius: var(--radius-large);
   background: var(--ink);
   color: var(--accent);
-  box-shadow: 0 10px 24px rgb(23 52 45 / 20%);
+  box-shadow: 0 10px 24px rgb(35 19 9 / 20%);
   font-size: 18px;
   font-weight: 800;
 }
@@ -1019,7 +1061,7 @@ h3 {
   gap: 10px;
   padding: 8px 2px;
   border: 0;
-  border-bottom: 1px solid #eef0ec;
+  border-bottom: 1px solid var(--line-soft);
   background: transparent;
   font: inherit;
   text-align: left;
@@ -1033,7 +1075,7 @@ h3 {
 #confirm-card hr {
   margin: 4px 0;
   border: 0;
-  border-top: 1px solid #eef0ec;
+  border-top: 1px solid var(--line-soft);
 }
 
 .type-pill {
@@ -1093,7 +1135,7 @@ h3 {
 #journal-strip button {
   flex: none;
   padding: 7px 12px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
@@ -1103,13 +1145,13 @@ h3 {
 }
 
 #journal-strip button.pending {
-  border: 1px dashed #cfd6d0;
+  border: 1px dashed var(--line-strong);
   background: transparent;
   color: var(--muted);
 }
 
 #journal-strip button.filled {
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink);
 }
@@ -1181,7 +1223,7 @@ h3 {
 
 .giant-payer-grid button {
   min-height: 220px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: var(--radius-large);
   background: var(--surface);
   font-size: clamp(22px, 7vw, 32px);
@@ -1207,7 +1249,7 @@ h3 {
   align-items: center;
   justify-content: flex-start;
   padding: 12px 16px;
-  border: 1px solid #dfe5e1;
+  border: 1px solid var(--line);
   border-radius: var(--radius-medium);
   background: var(--surface);
   font-size: 17px;
@@ -1273,7 +1315,7 @@ h3 {
   display: grid;
   place-items: center;
   padding: 16px;
-  background: rgb(23 52 45 / 45%);
+  background: rgb(35 19 9 / 45%);
 }
 
 .auth-card {
@@ -1281,7 +1323,7 @@ h3 {
   padding: 24px;
   border-radius: var(--radius-large);
   background: var(--surface);
-  box-shadow: 0 20px 50px rgb(23 52 45 / 28%);
+  box-shadow: 0 20px 50px rgb(35 19 9 / 28%);
 }
 
 .auth-card p {

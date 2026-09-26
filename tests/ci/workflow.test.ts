@@ -17,7 +17,7 @@ describe('.github/workflows/ci.yml', () => {
           step.uses.startsWith('actions/setup-node@'),
       )
       expect(setupNodeStep).toBeDefined()
-      expect(setupNodeStep.with['node-version']).toBe('26')
+      expect(setupNodeStep.with['node-version']).toBe('26.5.0')
     }
 
     const runsOf = (name: string): string[] =>

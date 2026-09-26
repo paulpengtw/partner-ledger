@@ -442,9 +442,6 @@ function reverseTransaction_(payload, nonce) {
     var cache = CacheService.getScriptCache();
     var nonceKey = 'nonce:' + nonce;
     var storedResult = cache.get(nonceKey);
-    if (storedResult) {
-      return withAlready_(JSON.parse(storedResult));
-    }
 
     var spreadsheet = SpreadsheetApp.openById(
       requiredProp_('LEDGER_SPREADSHEET_ID'),
@@ -462,18 +459,29 @@ function reverseTransaction_(payload, nonce) {
     var rows = readEntryRows_(entries, columns);
     var targetTxnId = String(payload.txn_id);
     var index;
+    for (index = 0; index < rows.length; index += 1) {
+      if (rows[index]['txn_id'] === idempotencyKey) {
+        if (rows[index]['沖銷txn_id'] !== targetTxnId) {
+          throw new Error('idempotency key already used for another reversal');
+        }
+        var durableResult = {
+          ok: true, txn_id: idempotencyKey, row: rows[index].sheetRow, already: true,
+        };
+        cache.put(nonceKey, JSON.stringify(durableResult), NONCE_CACHE_SECONDS);
+        return durableResult;
+      }
+    }
+    if (storedResult) {
+      throw new Error('cached reversal has no durable row');
+    }
 
     for (index = 0; index < rows.length; index += 1) {
       if (
         rows[index]['沖銷txn_id'] === targetTxnId
       ) {
-        var existingResult = { ok: true, already: true };
-        cache.put(
-          nonceKey,
-          JSON.stringify(existingResult),
-          NONCE_CACHE_SECONDS,
-        );
-        return existingResult;
+        return {
+          ok: true, txn_id: rows[index]['txn_id'], row: rows[index].sheetRow, already: true,
+        };
       }
     }
 

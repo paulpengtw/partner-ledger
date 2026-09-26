@@ -200,6 +200,20 @@ describe('settle', () => {
   })
 })
 
+describe('write response safety', () => {
+  it('does not treat an error with already:true as success', async () => {
+    const fetchFn = (async () => new Response(
+      JSON.stringify({ ok: false, already: true, error: 'outcome unknown' }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    )) as typeof fetch
+    await expect(submitTransaction(TRANSACTION, KEY, fetchFn)).resolves.toEqual({
+      ok: false,
+      kind: 'backend',
+      message: 'outcome unknown',
+    })
+  })
+})
+
 describe('reverseTransaction', () => {
   it('posts the reversal contract and maps success', async () => {
     const reversal = { txn_id: 'txn-001', date: '2026-07-27' }

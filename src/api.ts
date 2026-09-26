@@ -130,7 +130,7 @@ async function submitWrite(
   const result = typeof parsed === 'object' && parsed !== null
     ? parsed as Record<string, unknown>
     : {}
-  if (result.ok === true || result.already === true) {
+  if (response.ok && result.ok === true) {
     return { ok: true, alreadyRecorded: result.already === true }
   }
   return {

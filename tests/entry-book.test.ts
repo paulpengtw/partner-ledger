@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildEnvelope } from '../functions/lib/envelope'
+import { buildEnvelope as productionBuildEnvelope } from '../functions/lib/envelope'
+import { CONTRACT_VERSION } from '../src/generated/version'
 import {
   loadGasFunctionsWithFakeGas,
   type FakeGasHarness,
   type FakeSheet,
   type FakeTextOutput,
 } from './helpers/gas'
+
+const buildEnvelope = (secret: string, payload: Record<string, unknown>, ts: number, nonce: string) =>
+  productionBuildEnvelope(secret, { ...payload, contractVersion: CONTRACT_VERSION }, ts, nonce)
 
 const secret = 'test-secret'
 const fixedNow = new Date('2026-08-09T00:00:00.000Z')
@@ -42,6 +46,13 @@ describe('partner book doPost', () => {
   })
 
   describe('create_transaction', () => {
+    it('rechecks maintenance under the write lock before appending', async () => {
+      harness.onNextLock(() => harness.setScriptProperty('INTEGRATION_OPEN', 'false'))
+      expect(await postCreate(harness, 'create-paused-001'))
+        .toEqual({ ok: false, error: '系統更新中' })
+      expect(entryRows(harness)).toEqual([])
+    })
+
     it('appends exactly one column-complete flat row and stamps 記帳人 from userEmail', async () => {
       const response = await postCreate(harness, 'create-flat-001')
 

@@ -1,13 +1,8 @@
-export type Split = '這筆平分' | '幫狗狗付' | '幫自己付'
+import type { Transaction } from '../contract/generated/partner-ledger/vocabulary'
+import { CONTRACT_VERSION } from './generated/version'
 
-export type Transaction = {
-  date: string
-  amount: number
-  payer: string
-  split: Split
-  category: string
-  payee?: string
-}
+export type { Transaction } from '../contract/generated/partner-ledger/vocabulary'
+export type Split = Transaction['split']
 
 export type LedgerTransaction = {
   txn_id: string
@@ -82,6 +77,7 @@ async function post(
         'content-type': 'application/json',
         // Marks the call as programmatic so Cloudflare Access answers 401, not a 302.
         'x-requested-with': 'XMLHttpRequest',
+        'x-contract-version': CONTRACT_VERSION,
       },
       body: JSON.stringify(body),
       redirect: 'manual',

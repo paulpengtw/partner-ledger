@@ -1,3 +1,4 @@
+import { CONTRACT_VERSION } from '../src/generated/version'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   SignJWT,
@@ -53,6 +54,7 @@ function req(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      'x-contract-version': CONTRACT_VERSION,
       ...(authCookie === null ? {} : { cookie: authCookie }),
       ...(email === null ? {} : { 'Cf-Access-Authenticated-User-Email': email }),
     },
@@ -78,6 +80,17 @@ function decodePayload(encoded: string): unknown {
 }
 
 describe('handleAction', () => {
+  it.each(['missing', 'stale'])('refuses a %s client contract version before GAS', async (caseName) => {
+    const fetchFn = noFetch()
+    const request = req({})
+    if (caseName === 'missing') request.headers.delete('x-contract-version')
+    else request.headers.set('x-contract-version', 'old')
+    const response = await handleAction('health', request, env, deps(fetchFn))
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ ok: false, error: '版本已更新，請重新整理頁面' })
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['missing', null],
     ['invalid', 'CF_Authorization=not-a-jwt'],
@@ -175,6 +188,7 @@ describe('handleAction', () => {
       expect(init?.headers).toEqual({ 'content-type': 'application/json' })
       expect(envelope.nonce).toBe(KEY)
       expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION,
         action: 'create_transaction',
         idempotencyKey: KEY,
         userEmail: EMAIL,
@@ -201,6 +215,7 @@ describe('handleAction', () => {
       const envelope = JSON.parse(String(init?.body)) as { payload: string }
 
       expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION,
         action: 'create_transaction',
         idempotencyKey: KEY,
         userEmail: EMAIL,
@@ -254,7 +269,8 @@ describe('handleAction', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       )
       expect(envelope.nonce).not.toBe(KEY)
-      expect(decodePayload(envelope.payload)).toEqual({ action: 'health' })
+      expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION, action: 'health' })
       return new Response(upstreamBody, { status: 207 })
     }) as unknown as typeof fetch
 
@@ -301,6 +317,7 @@ describe('handleAction', () => {
       )
       expect(envelope.nonce).not.toBe(KEY)
       expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION,
         action: 'list_transactions',
         date_from: '2026-07-01',
         date_to: '2026-07-31',
@@ -330,6 +347,7 @@ describe('handleAction', () => {
 
       expect(envelope.nonce).toBe(KEY)
       expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION,
         action: 'settle',
         idempotencyKey: KEY,
         userEmail: EMAIL,
@@ -387,6 +405,7 @@ describe('handleAction', () => {
 
       expect(envelope.nonce).toBe(KEY)
       expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION,
         action: 'reverse_transaction',
         idempotencyKey: KEY,
         userEmail: EMAIL,
@@ -479,7 +498,8 @@ describe('handleAction', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       )
       expect(envelope.nonce).not.toBe(KEY)
-      expect(decodePayload(envelope.payload)).toEqual({ action: 'get_options' })
+      expect(decodePayload(envelope.payload)).toEqual({
+        contractVersion: CONTRACT_VERSION, action: 'get_options' })
       return new Response(upstreamBody, { status: 203 })
     }) as unknown as typeof fetch
 

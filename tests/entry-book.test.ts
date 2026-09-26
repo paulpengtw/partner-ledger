@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildEnvelope } from '../functions/lib/envelope'
+import { buildEnvelope as productionBuildEnvelope } from '../functions/lib/envelope'
+import { CONTRACT_VERSION } from '../src/generated/version'
 import {
   loadGasFunctionsWithFakeGas,
   type FakeGasHarness,
   type FakeSheet,
   type FakeTextOutput,
 } from './helpers/gas'
+
+const buildEnvelope = (secret: string, payload: Record<string, unknown>, ts: number, nonce: string) =>
+  productionBuildEnvelope(secret, { ...payload, contractVersion: CONTRACT_VERSION }, ts, nonce)
 
 const secret = 'test-secret'
 const fixedNow = new Date('2026-08-09T00:00:00.000Z')
@@ -42,6 +46,13 @@ describe('partner book doPost', () => {
   })
 
   describe('create_transaction', () => {
+    it('rechecks maintenance under the write lock before appending', async () => {
+      harness.onNextLock(() => harness.setScriptProperty('INTEGRATION_OPEN', 'false'))
+      expect(await postCreate(harness, 'create-paused-001'))
+        .toEqual({ ok: false, error: '系統更新中' })
+      expect(entryRows(harness)).toEqual([])
+    })
+
     it('appends exactly one column-complete flat row and stamps 記帳人 from userEmail', async () => {
       const response = await postCreate(harness, 'create-flat-001')
 
@@ -555,8 +566,38 @@ describe('partner book doPost', () => {
         txn_id: 'reverse-idem-001',
       })
 
-      expect(repeat).toEqual({ ok: true, already: true })
+      expect(repeat).toEqual({ ok: true, txn_id: 'reverse-idem-002', row: 3, already: true })
       expect(entryRows(harness)).toHaveLength(2)
+    })
+
+    it('refuses a reversal key reused for another target after cache expiry', async () => {
+      await postCreate(harness, 'reverse-key-first')
+      await postCreate(harness, 'reverse-key-second')
+      await postReverse(harness, 'reverse-key-used', { txn_id: 'reverse-key-first' })
+      harness.advanceCacheTime(601)
+      const before = entryRows(harness)
+
+      const response = await postReverse(harness, 'reverse-key-used', {
+        txn_id: 'reverse-key-second',
+      })
+
+      expect(response).toEqual({
+        ok: false,
+        error: 'idempotency key already used for another reversal',
+      })
+      expect(entryRows(harness)).toEqual(before)
+      const replay = await postReverse(harness, 'reverse-key-used', { txn_id: 'reverse-key-first' })
+      expect(replay).toEqual({ ok: true, txn_id: 'reverse-key-used', row: 4, already: true })
+      expect(entryRows(harness)).toEqual(before)
+    })
+
+    it('refuses a reversal when the script lock cannot be acquired', async () => {
+      await postCreate(harness, 'lock-original')
+      const before = entryRows(harness)
+      harness.failNextLock()
+      const response = await postReverse(harness, 'lock-reversal', { txn_id: 'lock-original' })
+      expect(response).toEqual({ ok: false, error: 'simulated lock failure' })
+      expect(entryRows(harness)).toEqual(before)
     })
 
     it('rejects an unknown txn_id by name', async () => {

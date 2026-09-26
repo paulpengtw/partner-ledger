@@ -107,9 +107,10 @@ The bound spreadsheet is titled `狗狗記帳_excel` and has ID `1JKJshYxThC9_Hm
    clasp login
    ```
 
-5. Run `clasp push` to upload `apps-script/Code.gs` and `apps-script/appsscript.json`:
+5. Run `npm run prepare:contract`, then `clasp push` to upload the verified `Contract.gs` and generated `Version.gs` alongside `Code.gs` and `appsscript.json`:
 
    ```sh
+   npm run prepare:contract
    clasp push
    ```
 
@@ -267,3 +268,10 @@ Operational caveats:
 - Step 10 (backup) has not been verified. Note: `LEDGER_BACKUP_FOLDER_ID` being unset is expected behaviour — `weeklyBackup` calls `DriveApp.createFolder` and stores the ID on first run — so this is not an open problem.
 
 As each item is settled, replace it here and in the section that depends on it, rather than leaving both.
+
+
+## Integration identity and maintenance
+
+The build generates `apps-script/Version.gs` and `src/generated/version.ts` from the verified contract pin and repository commit. `GET /api/identity` accepts a verified Cloudflare Access human or service JWT and reports the built Pages identity, actual Apps Script backend identity, and backend maintenance state. The two components may have different app revisions; their `contractVersion` pins must agree. Apps Script's signed `integrationState` action reports its own identity. An unreachable component or mismatched contract pin makes the integration unavailable.
+
+The integration starts in maintenance. After both deployments and their identity checks agree, run the **Set Maintenance** manual workflow with `mode=open`; choose `mode=maintenance` to close it. This workflow needs repository Actions secrets `EXPENSE_API_URL` (this ledger's Apps Script `/exec` URL) and `EXPENSE_API_SECRET` (the same HMAC secret held by Pages and Apps Script). Both secrets still need to be installed in this repository's Actions settings before the workflow is usable. It sends a signed Apps Script admin command; the Pages action allowlist cannot call that command. A stale command cannot undo a newer choice. If the workflow fails or times out, inspect signed `integrationState` before sending another command. No key or response body is logged.

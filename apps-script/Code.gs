@@ -17,7 +17,6 @@ var SPLIT_MODES = ['這筆平分', '幫狗狗付', '幫自己付'];
 var SETTLEMENT_CATEGORY = '結清';
 
 var MAX_LIST_TRANSACTIONS = 200;
-var MAX_SKEW_SECONDS = 300;
 var NONCE_CACHE_SECONDS = 600;
 var LOCK_WAIT_MILLISECONDS = 30000;
 var SCHEMA_SHEET_NAMES = ['分類', '選項清單', '設定'];
@@ -26,22 +25,80 @@ var BACKUP_FOLDER_PROPERTY = 'LEDGER_BACKUP_FOLDER_ID';
 var BACKUP_FOLDER_NAME = 'Partner Ledger backups';
 var BACKUP_RETENTION_COUNT = 12;
 
-function doPost(e) {
+function integrationState_() {
+  if (!/^[0-9a-f]{40}$/.test(CONTRACT_VERSION) ||
+      !/^[0-9a-f]{40}$/.test(APP_VERSION)) {
+    throw new Error('系統版本不可用');
+  }
+  var open = PropertiesService.getScriptProperties().getProperty('INTEGRATION_OPEN') === 'true';
+  return {
+    identity: { contractVersion: CONTRACT_VERSION, appVersion: APP_VERSION },
+    maintenance: open ? { kind: 'open' } : { kind: 'maintenance', message: '系統更新中' },
+  };
+}
+
+function requireFinancialOpen_(payload) {
+  var state = integrationState_();
+  if (state.maintenance.kind !== 'open') {
+    throw new Error('系統更新中');
+  }
+  if (!payload || payload.contractVersion !== CONTRACT_VERSION) {
+    throw new Error('版本已更新，請重新整理頁面');
+  }
+}
+
+function setMaintenance_(payload, nonce) {
+  integrationState_();
+  if (!payload || typeof payload.open !== 'boolean' ||
+      String(payload.commandNonce || '') !== nonce ||
+      payload.contractVersion !== CONTRACT_VERSION) {
+    throw new Error('invalid maintenance command');
+  }
+  var commandTs = Number(payload.commandTs);
+  if (!Number.isSafeInteger(commandTs)) {
+    throw new Error('invalid maintenance command timestamp');
+  }
+  var lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_WAIT_MILLISECONDS);
   try {
-    var requestText =
-      e && e.postData && e.postData.contents ? e.postData.contents : '{}';
-    var verified = verifyEnvelope_(JSON.parse(requestText));
-    return json_(route_(verified.payload, verified.nonce));
-  } catch (error) {
-    return json_({
-      ok: false,
-      error: String(error && error.message ? error.message : error),
-    });
+    var properties = PropertiesService.getScriptProperties();
+    var previousText = properties.getProperty('MAINTENANCE_LAST_COMMAND');
+    var previous = previousText ? JSON.parse(previousText) : null;
+    if (previous) {
+      if (!Number.isSafeInteger(previous.ts) || typeof previous.nonce !== 'string' ||
+          typeof previous.open !== 'boolean') {
+        throw new Error('maintenance command state unavailable');
+      }
+      if (commandTs < previous.ts ||
+          (commandTs === previous.ts &&
+            (nonce !== previous.nonce || payload.open !== previous.open))) {
+        throw new Error('stale maintenance command');
+      }
+    }
+    if (!previous || commandTs > previous.ts) {
+      if (Math.abs(Date.now() - commandTs) > 300000) {
+        throw new Error('maintenance command timestamp outside allowed window');
+      }
+      properties.setProperty('MAINTENANCE_LAST_COMMAND', JSON.stringify({
+        ts: commandTs, nonce: nonce, open: payload.open,
+      }));
+    }
+    properties.setProperty('INTEGRATION_OPEN', payload.open ? 'true' : 'false');
+    return integrationState_();
+  } finally {
+    lock.releaseLock();
   }
 }
 
 function route_(payload, nonce) {
   var action = payload && payload.action;
+  if (action === 'integrationState') {
+    return integrationState_();
+  }
+  if (action === 'setMaintenance') {
+    return setMaintenance_(payload, nonce);
+  }
+  requireFinancialOpen_(payload);
 
   if (action === 'health') {
     return health_();
@@ -63,48 +120,6 @@ function route_(payload, nonce) {
   }
 
   throw new Error('unsupported action: ' + action);
-}
-
-function verifyEnvelope_(envelope) {
-  if (!envelope || typeof envelope !== 'object') {
-    throw new Error('invalid envelope');
-  }
-
-  var ts = Number(envelope.ts);
-  var nonce = String(envelope.nonce || '');
-  var payloadB64 = String(envelope.payload || '');
-  var sig = String(envelope.sig || '');
-
-  if (!isFinite(ts)) {
-    throw new Error('missing ts');
-  }
-  if (!nonce) {
-    throw new Error('missing nonce');
-  }
-  if (!payloadB64) {
-    throw new Error('missing payload');
-  }
-  if (!sig) {
-    throw new Error('missing sig');
-  }
-
-  var now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - ts) > MAX_SKEW_SECONDS) {
-    throw new Error('request timestamp outside allowed window');
-  }
-
-  var secret = requiredProp_('EXPENSE_API_SECRET');
-  var signingInput = ts + '.' + nonce + '.' + payloadB64;
-  var expected = base64UrlEncode_(
-    Utilities.computeHmacSha256Signature(signingInput, secret),
-  );
-  if (!constantTimeEqual_(sig, expected)) {
-    throw new Error('bad signature');
-  }
-
-  var jsonText = Utilities.newBlob(base64UrlDecode_(payloadB64))
-    .getDataAsString('UTF-8');
-  return { payload: JSON.parse(jsonText), nonce: nonce };
 }
 
 function health_() {
@@ -302,6 +317,7 @@ function createTransaction_(payload, nonce) {
   lock.waitLock(LOCK_WAIT_MILLISECONDS);
 
   try {
+    requireFinancialOpen_(payload);
     var cache = CacheService.getScriptCache();
     var nonceKey = 'nonce:' + nonce;
     var storedResult = cache.get(nonceKey);
@@ -394,6 +410,7 @@ function settle_(payload, nonce) {
   lock.waitLock(LOCK_WAIT_MILLISECONDS);
 
   try {
+    requireFinancialOpen_(payload);
     var cache = CacheService.getScriptCache();
     var nonceKey = 'nonce:' + nonce;
     var storedResult = cache.get(nonceKey);
@@ -496,12 +513,10 @@ function reverseTransaction_(payload, nonce) {
   lock.waitLock(LOCK_WAIT_MILLISECONDS);
 
   try {
+    requireFinancialOpen_(payload);
     var cache = CacheService.getScriptCache();
     var nonceKey = 'nonce:' + nonce;
     var storedResult = cache.get(nonceKey);
-    if (storedResult) {
-      return withAlready_(JSON.parse(storedResult));
-    }
 
     var spreadsheet = SpreadsheetApp.openById(
       requiredProp_('LEDGER_SPREADSHEET_ID'),
@@ -519,18 +534,29 @@ function reverseTransaction_(payload, nonce) {
     var rows = readEntryRows_(entries, columns);
     var targetTxnId = String(payload.txn_id);
     var index;
+    for (index = 0; index < rows.length; index += 1) {
+      if (rows[index]['txn_id'] === idempotencyKey) {
+        if (rows[index]['沖銷txn_id'] !== targetTxnId) {
+          throw new Error('idempotency key already used for another reversal');
+        }
+        var durableResult = {
+          ok: true, txn_id: idempotencyKey, row: rows[index].sheetRow, already: true,
+        };
+        cache.put(nonceKey, JSON.stringify(durableResult), NONCE_CACHE_SECONDS);
+        return durableResult;
+      }
+    }
+    if (storedResult) {
+      throw new Error('cached reversal has no durable row');
+    }
 
     for (index = 0; index < rows.length; index += 1) {
       if (
         rows[index]['沖銷txn_id'] === targetTxnId
       ) {
-        var existingResult = { ok: true, already: true };
-        cache.put(
-          nonceKey,
-          JSON.stringify(existingResult),
-          NONCE_CACHE_SECONDS,
-        );
-        return existingResult;
+        return {
+          ok: true, txn_id: rows[index]['txn_id'], row: rows[index].sheetRow, already: true,
+        };
       }
     }
 
@@ -710,43 +736,6 @@ function taipeiIsoNow_() {
   return new Date(Date.now() + offsetMilliseconds)
     .toISOString()
     .replace('Z', '+08:00');
-}
-
-function requiredProp_(name) {
-  var value = PropertiesService.getScriptProperties().getProperty(name);
-  if (!value) {
-    throw new Error('missing script property: ' + name);
-  }
-  return value;
-}
-
-function json_(object) {
-  return ContentService.createTextOutput(JSON.stringify(object)).setMimeType(
-    ContentService.MimeType.JSON,
-  );
-}
-
-function base64UrlEncode_(bytes) {
-  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
-}
-
-function base64UrlDecode_(text) {
-  var normalized = text.replace(/-/g, '+').replace(/_/g, '/');
-  while (normalized.length % 4) {
-    normalized += '=';
-  }
-  return Utilities.base64Decode(normalized);
-}
-
-function constantTimeEqual_(a, b) {
-  if (a.length !== b.length) {
-    return false;
-  }
-  var difference = 0;
-  for (var index = 0; index < a.length; index += 1) {
-    difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return difference === 0;
 }
 
 function resolveHeaders_(headerRow, requiredHeaders) {

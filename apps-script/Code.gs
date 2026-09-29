@@ -21,6 +21,20 @@ var MAX_SNAPSHOT_RECORDS = 200;
 // The book has no currency column: the entry app records every amount in TWD.
 var BOOK_CURRENCY = 'TWD';
 var PARTNER_CAPABILITIES = ['complete-revisioned-reads'];
+// Durable dashboard-import operations. The sheet is created by the editor-run
+// setupIntegrationSheet(); until it exists, commands answer unavailable.
+var OPERATIONS_SHEET_NAME = '整合操作';
+var OPERATION_HEADERS = [
+  'operation_id',
+  'content_digest',
+  'kind',
+  'txn_id',
+  'personal_group_id',
+  'committed_at',
+];
+var INTEGRATION_CAPABILITIES = ['durable-operation-outcomes', 'link-metadata'];
+var INTEGRATION_SOURCE = 'dashboard-import';
+var PENDING_CATEGORY = '尚未分類';
 var NONCE_CACHE_SECONDS = 600;
 var LOCK_WAIT_MILLISECONDS = 30000;
 var SCHEMA_SHEET_NAMES = ['分類', '選項清單', '設定'];
@@ -42,6 +56,21 @@ function integrationState_() {
     capabilities: PARTNER_CAPABILITIES.slice(),
     readAt: taipeiIsoNow_(),
   };
+}
+
+// Capabilities that depend on the integration sheet are reported only when it
+// exists, so a caller never believes in outcomes this book cannot keep.
+function integrationStateWithCapabilities_() {
+  var state = integrationState_();
+  try {
+    var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
+    if (operationsSheet_(spreadsheet)) {
+      state.capabilities = state.capabilities.concat(INTEGRATION_CAPABILITIES);
+    }
+  } catch (error) {
+    // An unreadable integration sheet hides only the capabilities it backs.
+  }
+  return state;
 }
 
 function requireFinancialOpen_(payload) {
@@ -100,10 +129,13 @@ function setMaintenance_(payload, nonce) {
 function route_(payload, nonce) {
   var action = payload && payload.action;
   if (action === 'integrationState') {
-    return integrationState_();
+    return integrationStateWithCapabilities_();
   }
   if (action === 'setMaintenance') {
     return setMaintenance_(payload, nonce);
+  }
+  if (action === 'outcome') {
+    return outcome_(payload);
   }
   requireFinancialOpen_(payload);
 
@@ -118,6 +150,9 @@ function route_(payload, nonce) {
   }
   if (action === 'snapshot') {
     return snapshot_(payload);
+  }
+  if (action === 'command') {
+    return command_(payload);
   }
   if (action === 'create_transaction') {
     return createTransaction_(payload, nonce);
@@ -330,9 +365,10 @@ function snapshot_(payload) {
     .getDisplayValues()[0];
   var columns = resolveHeaders_(headerRow, ENTRY_HEADERS);
   var rows = readEntryRows_(entries, columns);
+  var operations = readOperations_(operationsSheet_(spreadsheet));
   var revision = digestHex_(Utilities.computeDigest(
     Utilities.DigestAlgorithm.SHA_256,
-    JSON.stringify({ partners: partners.names, rows: rows }),
+    JSON.stringify({ partners: partners.names, rows: rows, operations: operations }),
   ));
   if (
     payload.snapshotRevision !== undefined &&
@@ -346,7 +382,7 @@ function snapshot_(payload) {
     };
   }
 
-  var records = snapshotEntryRecords_(rows, partners.names);
+  var records = snapshotEntryRecords_(rows, partners.names, operations);
   var offset = snapshotCursorOffset_(payload.cursor);
   if (offset > records.length) {
     throw new Error('snapshot cursor is outside the result');
@@ -367,7 +403,14 @@ function snapshot_(payload) {
 // Every non-blank entry row as a typed record. A row that cannot be read
 // exactly fails the whole snapshot: a Settlement computed from the rows that
 // happened to parse is not a Settlement.
-function snapshotEntryRecords_(rows, partnerNames) {
+function snapshotEntryRecords_(rows, partnerNames, operations) {
+  var linkedGroup = Object.create(null);
+  for (var operationIndex = 0; operationIndex < operations.length; operationIndex += 1) {
+    var operation = operations[operationIndex];
+    if (operation.txn_id !== '' && operation.personal_group_id !== '') {
+      linkedGroup[operation.txn_id] = operation.personal_group_id;
+    }
+  }
   var reversedBy = Object.create(null);
   var seenIds = Object.create(null);
   var index;
@@ -413,10 +456,7 @@ function snapshotEntryRecords_(rows, partnerNames) {
     var reverses = String(row['沖銷txn_id'] || '').trim();
     records.push({
       id: txnId === '' ? null : txnId,
-      revision: digestHex_(Utilities.computeDigest(
-        Utilities.DigestAlgorithm.SHA_256,
-        JSON.stringify(row),
-      )),
+      revision: entryRevision_(row),
       sheetRow: sheetRow,
       kind: settlement ? 'settlement' : 'expense',
       financialDate: date,
@@ -430,6 +470,10 @@ function snapshotEntryRecords_(rows, partnerNames) {
         ? reversedBy[txnId]
         : null,
       source: String(row['來源'] || ''),
+      origin: String(row['來源'] || '') === INTEGRATION_SOURCE ? 'integration' : 'partner',
+      link: txnId !== '' && linkedGroup[txnId] !== undefined
+        ? { personalGroupId: linkedGroup[txnId] }
+        : null,
     });
   }
   return records;
@@ -455,6 +499,286 @@ function entryAmountText_(row, sheetRow) {
     throw new Error('invalid 金額 at row ' + sheetRow);
   }
   return text;
+}
+
+function entryRevision_(row) {
+  return digestHex_(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(row),
+  ));
+}
+
+/* Durable dashboard-import commands ------------------------------------ */
+
+function operationsSheet_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(OPERATIONS_SHEET_NAME);
+  if (!sheet || sheet.getLastColumn() === 0) {
+    return null;
+  }
+  var header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
+  return { sheet: sheet, columns: resolveHeaders_(header, OPERATION_HEADERS) };
+}
+
+function readOperations_(operations) {
+  if (!operations) {
+    return [];
+  }
+  var lastRow = operations.sheet.getLastRow();
+  if (lastRow < 2) {
+    return [];
+  }
+  var values = operations.sheet
+    .getRange(2, 1, lastRow - 1, operations.sheet.getLastColumn())
+    .getDisplayValues();
+  var result = [];
+  for (var rowIndex = 0; rowIndex < values.length; rowIndex += 1) {
+    var record = {};
+    for (var headerIndex = 0; headerIndex < OPERATION_HEADERS.length; headerIndex += 1) {
+      var header = OPERATION_HEADERS[headerIndex];
+      record[header] = String(values[rowIndex][operations.columns[header] - 1] || '').trim();
+    }
+    if (record.operation_id !== '') {
+      result.push(record);
+    }
+  }
+  return result;
+}
+
+function findOperation_(operations, operationId) {
+  for (var index = 0; index < operations.length; index += 1) {
+    if (operations[index].operation_id === operationId) {
+      return operations[index];
+    }
+  }
+  return null;
+}
+
+function rowByTxnId_(rows, txnId) {
+  for (var index = 0; index < rows.length; index += 1) {
+    if (String(rows[index]['txn_id'] || '') === txnId) {
+      return rows[index];
+    }
+  }
+  return null;
+}
+
+function committedOutcome_(operation, rows) {
+  var row = rowByTxnId_(rows, operation.txn_id);
+  if (!row) {
+    return {
+      kind: 'incomplete',
+      operationId: operation.operation_id,
+      reason: 'recorded-entry-is-missing',
+      destinations: [],
+    };
+  }
+  return {
+    kind: 'committed',
+    operationId: operation.operation_id,
+    destinations: [{ id: operation.txn_id, revision: entryRevision_(row) }],
+    committedAt: operation.committed_at,
+  };
+}
+
+function conflictOutcome_(operationId, reason, conflicts) {
+  return { kind: 'conflict', operationId: operationId, reason: reason, conflicts: conflicts };
+}
+
+function rejectedOutcome_(operationId, reason) {
+  return { kind: 'rejected', operationId: operationId, reason: reason };
+}
+
+// Discoverable after a lost response or an expired cache, and readable during
+// maintenance, so a caller never has to guess from a replay refusal.
+function outcome_(payload) {
+  var operationId = String((payload && payload.operationId) || '').trim();
+  if (!operationId) {
+    throw new Error('operationId is required');
+  }
+  var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
+  var operation = findOperation_(readOperations_(operationsSheet_(spreadsheet)), operationId);
+  if (!operation) {
+    return { kind: 'unavailable', book: 'partner', reason: 'no-such-operation' };
+  }
+  var entries = requiredSheet_(spreadsheet, ENTRY_SHEET_NAME);
+  var header = entries.getRange(1, 1, 1, entries.getLastColumn()).getDisplayValues()[0];
+  return committedOutcome_(operation, readEntryRows_(entries, resolveHeaders_(header, ENTRY_HEADERS)));
+}
+
+// One conditional, replayable command. The entry's txn_id is the operation id,
+// so a retry after the entry landed but before the operation was recorded
+// finds that entry instead of appending a second one.
+function command_(payload) {
+  var operationId = String(payload.operationId || '').trim();
+  if (!operationId) {
+    throw new Error('operationId is required');
+  }
+  var digest = String(payload.contentDigest || '').trim();
+  if (!digest) {
+    throw new Error('contentDigest is required');
+  }
+  if (!Array.isArray(payload.expectedRevisions)) {
+    throw new Error('expectedRevisions must be an array');
+  }
+  var content = payload.content;
+  if (!content || typeof content !== 'object') {
+    throw new Error('content is required');
+  }
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_WAIT_MILLISECONDS);
+  try {
+    requireFinancialOpen_(payload);
+    var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
+    var operations = operationsSheet_(spreadsheet);
+    if (!operations) {
+      return { kind: 'unavailable', book: 'partner', reason: 'integration-schema-unavailable' };
+    }
+    var entries = requiredSheet_(spreadsheet, ENTRY_SHEET_NAME);
+    var header = entries.getRange(1, 1, 1, entries.getLastColumn()).getDisplayValues()[0];
+    var columns = resolveHeaders_(header, ENTRY_HEADERS);
+    var rows = readEntryRows_(entries, columns);
+
+    var recorded = findOperation_(readOperations_(operations), operationId);
+    if (recorded) {
+      if (recorded.content_digest !== digest) {
+        return conflictOutcome_(operationId, 'operation-id-reused-with-different-content', []);
+      }
+      return committedOutcome_(recorded, rows);
+    }
+
+    var conflicts = [];
+    for (var index = 0; index < payload.expectedRevisions.length; index += 1) {
+      var expected = payload.expectedRevisions[index] || {};
+      var expectedId = String(expected.id || '');
+      var row = rowByTxnId_(rows, expectedId);
+      var actual = row ? entryRevision_(row) : 'missing';
+      if (actual !== String(expected.revision || '')) {
+        conflicts.push({ id: expectedId, expected: String(expected.revision || ''), actual: actual });
+      }
+    }
+    if (conflicts.length > 0) {
+      return conflictOutcome_(operationId, 'expected-revision-changed', conflicts);
+    }
+
+    if (content.kind === 'partner-agreement') {
+      return createAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content);
+    }
+    return rejectedOutcome_(operationId, 'unsupported-command-kind');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function createAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content) {
+  var partners = readPartners_(spreadsheet);
+  var built = agreementEntry_(content, partners.names, readCategories_(spreadsheet), operationId);
+  if (built.error) {
+    return rejectedOutcome_(operationId, built.error);
+  }
+  var existing = rowByTxnId_(rows, operationId);
+  if (existing) {
+    if (!sameEntry_(existing, built.row)) {
+      return conflictOutcome_(operationId, 'entry-exists-with-different-content', []);
+    }
+  } else {
+    appendEntry_(entries, columns, built.row);
+  }
+  var committedAt = taipeiIsoNow_();
+  var values = [];
+  for (var columnIndex = 0; columnIndex < operations.sheet.getLastColumn(); columnIndex += 1) {
+    values.push('');
+  }
+  var operation = {
+    operation_id: operationId,
+    content_digest: digest,
+    kind: 'partner-agreement',
+    txn_id: operationId,
+    personal_group_id: String(content.groupId || ''),
+    committed_at: committedAt,
+  };
+  for (var headerIndex = 0; headerIndex < OPERATION_HEADERS.length; headerIndex += 1) {
+    var name = OPERATION_HEADERS[headerIndex];
+    values[operations.columns[name] - 1] = operation[name];
+  }
+  operations.sheet
+    .getRange(operations.sheet.getLastRow() + 1, 1, 1, values.length)
+    .setValues([values]);
+  return committedOutcome_(operation, readEntryRows_(entries, columns));
+}
+
+// The agreement as a Partner-book row. The dashboard speaks of cheng and the
+// partner; the book speaks of participant names, so `selfName` says which
+// name is cheng. A USD agreement is refused, never converted: this book has
+// no currency column and would otherwise add it into TWD.
+function agreementEntry_(content, partnerNames, categories, txnId) {
+  var self = String(content.selfName || '');
+  var selfIndex = partnerNames.indexOf(self);
+  if (selfIndex === -1) {
+    return { error: 'self-name-is-not-a-partner' };
+  }
+  var other = partnerNames[1 - selfIndex];
+  if (content.payer !== 'cheng' && content.payer !== 'partner') {
+    return { error: 'invalid-payer' };
+  }
+  var payer = content.payer === 'cheng' ? self : other;
+  var split;
+  if (content.allocation === 'equal-halves') {
+    split = '這筆平分';
+  } else if (content.allocation === 'entirely-cheng' || content.allocation === 'entirely-partner') {
+    var payerBears = (content.allocation === 'entirely-cheng') === (content.payer === 'cheng');
+    split = payerBears ? '幫自己付' : '幫狗狗付';
+  } else {
+    return { error: 'invalid-allocation' };
+  }
+  var total = content.total || {};
+  if (total.currency !== BOOK_CURRENCY) {
+    return { error: 'currency-not-supported-by-partner-book' };
+  }
+  var amountText = String(total.amount || '');
+  if (!/^\d+(\.\d+)?$/.test(amountText) || Number(amountText) <= 0 ||
+      String(Number(amountText)) !== amountText.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')) {
+    return { error: 'amount-not-exactly-storable' };
+  }
+  var date = String(content.effectiveDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { error: 'invalid-effective-date' };
+  }
+  var category = content.category === undefined ? PENDING_CATEGORY : String(content.category);
+  if (category === SETTLEMENT_CATEGORY ||
+      (category !== PENDING_CATEGORY && categories.indexOf(category) === -1)) {
+    return { error: 'unknown-category' };
+  }
+  return {
+    row: entryRow_({
+      txnId: txnId,
+      date: date,
+      amount: Number(amountText),
+      payer: payer,
+      split: split,
+      category: category,
+      payee: String(content.payee || ''),
+      enterer: self,
+      source: INTEGRATION_SOURCE,
+      reversalTxnId: '',
+    }),
+  };
+}
+
+function sameEntry_(stored, row) {
+  var fields = ['txn_id', '日期', '付款人', '分攤方式', '分類', '來源', '沖銷txn_id'];
+  for (var index = 0; index < fields.length; index += 1) {
+    if (String(stored[fields[index]] || '') !== String(row[fields[index]] || '')) {
+      return false;
+    }
+  }
+  return Number(stored['金額']) === Number(row['金額']);
+}
+
+// Editor-run only: creates the integration sheet on an existing book.
+function setupIntegrationSheet() {
+  var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
+  initializeBlankSheet_(getOrCreateSheet_(spreadsheet, OPERATIONS_SHEET_NAME), [OPERATION_HEADERS]);
 }
 
 function snapshotCursorOffset_(cursor) {

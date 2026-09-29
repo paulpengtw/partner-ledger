@@ -347,8 +347,8 @@ function listTransactions_(payload) {
 // Unlike list_transactions it is never capped: a page that is not the last
 // names a cursor, and every page belongs to one stated revision.
 function snapshot_(payload) {
-  if (!payload || payload.scope !== 'agreements') {
-    throw new Error('snapshot scope must be agreements');
+  if (!payload || (payload.scope !== 'agreements' && payload.scope !== 'settings')) {
+    throw new Error('snapshot scope must be agreements or settings');
   }
   if (payload.interval !== undefined) {
     throw new Error('snapshot interval is not supported');
@@ -360,6 +360,9 @@ function snapshot_(payload) {
   var spreadsheet = SpreadsheetApp.openById(
     requiredProp_('LEDGER_SPREADSHEET_ID'),
   );
+  if (payload.scope === 'settings') {
+    return settingsSnapshot_(spreadsheet, payload);
+  }
   var partners = readPartners_(spreadsheet);
   var entries = requiredSheet_(spreadsheet, ENTRY_SHEET_NAME);
   var headerRow = entries
@@ -398,6 +401,36 @@ function snapshot_(payload) {
     continuation: nextOffset < records.length
       ? { kind: 'cursor', cursor: String(nextOffset) }
       : { kind: 'end' },
+    readAt: taipeiIsoNow_(),
+  };
+}
+
+// The formal categories a Confirmation may choose, as one small page.
+function settingsSnapshot_(spreadsheet, payload) {
+  var categories = readCategories_(spreadsheet);
+  var revision = digestHex_(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(categories),
+  ));
+  if (payload.snapshotRevision !== undefined && String(payload.snapshotRevision) !== revision) {
+    return {
+      kind: 'revision-changed',
+      book: 'partner',
+      expected: String(payload.snapshotRevision),
+      actual: revision,
+    };
+  }
+  var records = [];
+  for (var index = 0; index < categories.length; index += 1) {
+    if (categories[index] !== SETTLEMENT_CATEGORY && categories[index] !== PENDING_CATEGORY) {
+      records.push({ id: 'category:' + categories[index], kind: 'category', name: categories[index] });
+    }
+  }
+  return {
+    scope: 'settings',
+    snapshotRevision: revision,
+    records: records,
+    continuation: { kind: 'end' },
     readAt: taipeiIsoNow_(),
   };
 }

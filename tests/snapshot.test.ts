@@ -44,14 +44,14 @@ function row(txnId: string, overrides: Partial<Record<string, unknown>> = {}): u
 }
 
 describe('integration state', () => {
-  it('names the book and reports only the complete-read capability', async () => {
+  it('names the book and reports its read capabilities', async () => {
     const harness = loadGasFunctionsWithFakeGas()
     const state = await post(harness, { action: 'integrationState' })
     expect(state).toMatchObject({
       book: 'partner',
       identity: { contractVersion: CONTRACT_VERSION, appVersion: APP_VERSION },
       maintenance: { kind: 'open' },
-      capabilities: ['complete-revisioned-reads'],
+      capabilities: ['complete-revisioned-reads', 'stable-identity'],
     })
     expect(state.readAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*\+08:00$/)
   })
@@ -142,7 +142,7 @@ describe('agreements snapshot', () => {
   it('refuses unknown scopes, intervals and unpinned continuations', async () => {
     bootstrap(harness, [row('e1')])
     expect(await post(harness, { action: 'snapshot', scope: 'accounts' }))
-      .toEqual({ ok: false, error: 'snapshot scope must be agreements' })
+      .toEqual({ ok: false, error: 'snapshot scope must be agreements or settings' })
     expect(await post(harness, { action: 'snapshot', scope: 'agreements', interval: { from: 'a', to: 'b' } }))
       .toEqual({ ok: false, error: 'snapshot interval is not supported' })
     expect(await post(harness, { action: 'snapshot', scope: 'agreements', cursor: '0' }))
@@ -157,5 +157,16 @@ describe('agreements snapshot', () => {
     harness.setScriptProperty('INTEGRATION_OPEN', 'true')
     expect(await post(harness, { action: 'snapshot', scope: 'agreements', contractVersion: 'old' }))
       .toEqual({ ok: false, error: '版本已更新，請重新整理頁面' })
+  })
+
+  it('lists the formal categories a Confirmation may choose', async () => {
+    bootstrap(harness, [row('e1')])
+    const page = await post(harness, { action: 'snapshot', scope: 'settings' })
+    expect(page).toMatchObject({
+      scope: 'settings',
+      records: [{ id: 'category:餐飲', kind: 'category', name: '餐飲' }],
+      continuation: { kind: 'end' },
+    })
+    expect(page.snapshotRevision).toMatch(/^[0-9a-f]{64}$/)
   })
 })

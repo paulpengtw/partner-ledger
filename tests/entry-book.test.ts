@@ -245,6 +245,7 @@ describe('partner book doPost', () => {
           記帳人: '阿哲',
           來源: 'web-app',
           沖銷txn_id: '',
+          幣別: 'TWD',
           voided: false,
         },
       ])
@@ -253,6 +254,7 @@ describe('partner book doPost', () => {
           { debtor: '阿哲', creditor: '小語', outstanding: 150 },
           { debtor: '小語', creditor: '阿哲', outstanding: 100 },
         ],
+        otherCurrencies: [],
       })
     })
 
@@ -282,6 +284,7 @@ describe('partner book doPost', () => {
           { debtor: '阿哲', creditor: '小語', outstanding: 0 },
           { debtor: '小語', creditor: '阿哲', outstanding: 0 },
         ],
+        otherCurrencies: [],
       })
     })
 

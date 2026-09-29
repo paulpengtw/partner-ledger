@@ -14,7 +14,7 @@ export const REFRESHED_OPTIONS: CounterpartyOptions = {
   partners: ['阿哲', '小語'],
 }
 
-function transaction(overrides: Partial<LedgerTransaction>): LedgerTransaction {
+export function transaction(overrides: Partial<LedgerTransaction>): LedgerTransaction {
   return {
     txn_id: '',
     日期: '2026-08-01',

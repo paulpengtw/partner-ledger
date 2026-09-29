@@ -15,6 +15,8 @@ export type LedgerTransaction = {
   記帳人: string
   來源: string
   沖銷txn_id: string
+  /** Absent from older backends, which hold TWD only. */
+  幣別?: string
   voided: boolean
 }
 
@@ -27,7 +29,10 @@ export type PayableDirection = {
 export type ListResult = {
   transactions: LedgerTransaction[]
   payables: {
+    /** The book's own currency, TWD. */
     directions: PayableDirection[]
+    /** Anything owed in another currency, never added into the TWD figure. */
+    otherCurrencies?: Array<{ currency: string; directions: PayableDirection[] }>
   }
 }
 

@@ -32,7 +32,7 @@ var OPERATION_HEADERS = [
   'personal_group_id',
   'committed_at',
 ];
-var INTEGRATION_CAPABILITIES = ['durable-operation-outcomes', 'link-metadata'];
+var INTEGRATION_CAPABILITIES = ['durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states'];
 var INTEGRATION_SOURCE = 'dashboard-import';
 var PENDING_CATEGORY = '尚未分類';
 var NONCE_CACHE_SECONDS = 600;
@@ -647,6 +647,11 @@ function command_(payload) {
       return committedOutcome_(recorded, rows);
     }
 
+    if (content.kind === 'confirm-agreement') {
+      return confirmAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content,
+        payload.expectedRevisions);
+    }
+
     var conflicts = [];
     for (var index = 0; index < payload.expectedRevisions.length; index += 1) {
       var expected = payload.expectedRevisions[index] || {};
@@ -684,19 +689,22 @@ function createAgreement_(spreadsheet, entries, columns, rows, operations, opera
   } else {
     appendEntry_(entries, columns, built.row);
   }
-  var committedAt = taipeiIsoNow_();
-  var values = [];
-  for (var columnIndex = 0; columnIndex < operations.sheet.getLastColumn(); columnIndex += 1) {
-    values.push('');
-  }
-  var operation = {
+  var operation = recordOperation_(operations, {
     operation_id: operationId,
     content_digest: digest,
     kind: 'partner-agreement',
     txn_id: operationId,
     personal_group_id: String(content.groupId || ''),
-    committed_at: committedAt,
-  };
+  });
+  return committedOutcome_(operation, readEntryRows_(entries, columns));
+}
+
+function recordOperation_(operations, operation) {
+  operation.committed_at = taipeiIsoNow_();
+  var values = [];
+  for (var columnIndex = 0; columnIndex < operations.sheet.getLastColumn(); columnIndex += 1) {
+    values.push('');
+  }
   for (var headerIndex = 0; headerIndex < OPERATION_HEADERS.length; headerIndex += 1) {
     var name = OPERATION_HEADERS[headerIndex];
     values[operations.columns[name] - 1] = operation[name];
@@ -704,6 +712,66 @@ function createAgreement_(spreadsheet, entries, columns, rows, operations, opera
   operations.sheet
     .getRange(operations.sheet.getLastRow() + 1, 1, 1, values.length)
     .setValues([values]);
+  return operation;
+}
+
+// Confirmation (已確認) gives a pending agreement its formal category. It is
+// judged on the state it produces: an entry already holding the requested
+// category is the answer to a retry whose response was lost, while anything
+// else that moved since review is a conflict. An invalid confirmation writes
+// nothing at all.
+function confirmAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content,
+    expectedRevisions) {
+  var agreementId = String(content.agreementId || '');
+  var category = String(content.category || '');
+  if (category === '' || category === PENDING_CATEGORY || category === SETTLEMENT_CATEGORY ||
+      readCategories_(spreadsheet).indexOf(category) === -1) {
+    return rejectedOutcome_(operationId, 'confirmation-needs-a-formal-category');
+  }
+  var row = rowByTxnId_(rows, agreementId);
+  if (!row) {
+    return rejectedOutcome_(operationId, 'unknown-agreement');
+  }
+  if (String(row['分類'] || '') === SETTLEMENT_CATEGORY || String(row['沖銷txn_id'] || '') !== '' ||
+      reversedTxnIds_(rows)[agreementId]) {
+    return rejectedOutcome_(operationId, 'agreement-cannot-be-confirmed');
+  }
+  var expected = null;
+  for (var index = 0; index < expectedRevisions.length; index += 1) {
+    if (expectedRevisions[index] && String(expectedRevisions[index].id || '') === agreementId) {
+      expected = String(expectedRevisions[index].revision || '');
+    }
+  }
+  if (expected === null) {
+    return rejectedOutcome_(operationId, 'confirmation-needs-the-reviewed-revision');
+  }
+
+  var alreadyConfirmed = String(row['分類'] || '') === category;
+  if (!alreadyConfirmed) {
+    var actual = entryRevision_(row);
+    if (actual !== expected) {
+      return conflictOutcome_(operationId, 'expected-revision-changed',
+        [{ id: agreementId, expected: expected, actual: actual }]);
+    }
+    entries.getRange(row.sheetRow, columns['分類'], 1, 1).setValues([[category]]);
+  }
+
+  var stored = rowByTxnId_(readEntryRows_(entries, columns), agreementId);
+  if (!stored || String(stored['分類'] || '') !== category) {
+    return {
+      kind: 'incomplete',
+      operationId: operationId,
+      reason: 'confirmation-not-visible-in-the-resulting-entry',
+      destinations: [],
+    };
+  }
+  var operation = recordOperation_(operations, {
+    operation_id: operationId,
+    content_digest: digest,
+    kind: 'confirm-agreement',
+    txn_id: agreementId,
+    personal_group_id: '',
+  });
   return committedOutcome_(operation, readEntryRows_(entries, columns));
 }
 

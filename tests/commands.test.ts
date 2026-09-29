@@ -66,7 +66,7 @@ describe('Partner integration commands', () => {
 
   it('reports outcome capabilities only once the integration sheet exists', async () => {
     expect((await post(harness, { action: 'integrationState' })).capabilities)
-      .toEqual(['complete-revisioned-reads', 'durable-operation-outcomes', 'link-metadata'])
+      .toEqual(['complete-revisioned-reads', 'durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states'])
     const bare = loadGasFunctionsWithFakeGas()
     bootstrap(bare, { integration: false })
     expect((await post(bare, { action: 'integrationState' })).capabilities).toEqual(['complete-revisioned-reads'])
@@ -169,5 +169,67 @@ describe('Partner integration commands', () => {
     expect(await post(harness, command('op-1', agreement({ total: { amount: '589.60', currency: 'TWD' } }))))
       .toMatchObject({ kind: 'committed' })
     expect(entryRows(harness)[0]![2]).toBe(589.6)
+  })
+
+  describe('Confirmation', () => {
+    async function pendingAgreement(): Promise<string> {
+      const created = await post(harness, command('op-1', agreement()))
+      return created.destinations[0].revision
+    }
+    const confirm = (operationId: string, revision: string, overrides: Record<string, unknown> = {}) =>
+      command(operationId, { kind: 'confirm-agreement', agreementId: 'op-1', category: '餐飲', ...overrides }, {
+        expectedRevisions: [{ id: 'op-1', revision }],
+      })
+
+    it('sets the formal category and answers with the resulting revision', async () => {
+      const reviewed = await pendingAgreement()
+      const outcome = await post(harness, confirm('confirm-1', reviewed))
+      expect(outcome).toMatchObject({ kind: 'committed', destinations: [{ id: 'op-1' }] })
+      expect(outcome.destinations[0].revision).not.toBe(reviewed)
+      expect(entryRows(harness)[0]![5]).toBe('餐飲')
+      expect(await post(harness, confirm('confirm-1', reviewed))).toEqual(outcome)
+    })
+
+    it('rejects an invalid confirmation without editing the entry', async () => {
+      const reviewed = await pendingAgreement()
+      for (const [overrides, reason] of [
+        [{ category: '尚未分類' }, 'confirmation-needs-a-formal-category'],
+        [{ category: '結清' }, 'confirmation-needs-a-formal-category'],
+        [{ category: '不存在' }, 'confirmation-needs-a-formal-category'],
+        [{ agreementId: 'nope' }, 'unknown-agreement'],
+      ] as const) {
+        expect(await post(harness, confirm(`bad-${reason}-${overrides.category ?? ''}`, reviewed, overrides)))
+          .toMatchObject({ kind: 'rejected', reason })
+      }
+      expect(await post(harness, command('no-rev', { kind: 'confirm-agreement', agreementId: 'op-1', category: '餐飲' })))
+        .toMatchObject({ kind: 'rejected', reason: 'confirmation-needs-the-reviewed-revision' })
+      expect(entryRows(harness)[0]![5]).toBe('尚未分類')
+    })
+
+    it('conflicts when the agreement changed after review, and accepts the state a lost response left', async () => {
+      const reviewed = await pendingAgreement()
+      harness.spreadsheet.getSheetByName('帳目')!.getRange(2, 3, 1, 1).setValues([[1300]])
+      expect(await post(harness, confirm('confirm-1', reviewed))).toMatchObject({
+        kind: 'conflict', reason: 'expected-revision-changed', conflicts: [{ id: 'op-1', expected: reviewed }],
+      })
+      expect(entryRows(harness)[0]![5]).toBe('尚未分類')
+
+      const operations = harness.spreadsheet.getSheetByName('整合操作')!
+      const current = (await post(harness, { action: 'snapshot', scope: 'agreements' })).records[0].revision
+      operations.failNextSetValues('response lost after the category was written')
+      expect((await post(harness, confirm('confirm-2', current))).ok).toBe(false)
+      expect(entryRows(harness)[0]![5]).toBe('餐飲')
+      expect(await post(harness, confirm('confirm-2', current))).toMatchObject({ kind: 'committed' })
+    })
+
+    it('refuses to confirm a settlement or a reversed agreement', async () => {
+      const reviewed = await pendingAgreement()
+      const sheet = harness.spreadsheet.getSheetByName('帳目')!
+      sheet.getRange(3, 1, 1, entryHeaders.length).setValues([
+        ['r1', '2026-09-21', 1200, 'cheng', '這筆平分', '尚未分類', '', 'cheng', 'web-app', 'op-1'],
+      ])
+      expect(await post(harness, confirm('confirm-1', reviewed)))
+        .toMatchObject({ kind: 'rejected', reason: 'agreement-cannot-be-confirmed' })
+    })
   })
 })

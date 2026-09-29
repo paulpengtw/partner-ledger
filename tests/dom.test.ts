@@ -4,6 +4,7 @@ import {
   CACHED_OPTIONS,
   LIST_RESULT,
   OVER_SETTLED_RESULT,
+  transaction,
 } from './pwa-fixtures'
 
 const FIXED_UUID = '3b241101-e2bb-4255-8caf-4136c566a962'
@@ -327,6 +328,40 @@ describe('分向對帳 balance view', () => {
     expect(lines[1]?.textContent).toContain('50')
     expect(document.querySelector('#statement-list [data-txn-id="txn-voided"]'))
       .toBeNull()
+  })
+
+  it('adds a refund to its recipient\'s side, lists another currency apart and leaves it out of the TWD statement', async () => {
+    const result = {
+      transactions: [
+        transaction({ txn_id: 'usd-1', 日期: '2026-08-08', 金額: '20', 付款人: '小語', 分攤方式: '幫狗狗付', 分類: '餐飲', 幣別: 'USD' }),
+        transaction({ txn_id: 'refund-1', 日期: '2026-08-07', 金額: '300', 付款人: '阿哲', 分攤方式: '這筆平分', 分類: '退款' }),
+        ...LIST_RESULT.transactions,
+      ],
+      payables: {
+        directions: [
+          { debtor: '阿哲', creditor: '小語', outstanding: 200 },
+          { debtor: '小語', creditor: '阿哲', outstanding: 0 },
+        ],
+        otherCurrencies: [{
+          currency: 'USD',
+          directions: [
+            { debtor: '阿哲', creditor: '小語', outstanding: 20 },
+            { debtor: '小語', creditor: '阿哲', outstanding: 0 },
+          ],
+        }],
+      },
+    }
+    await showBalance(result)
+
+    const lines = [...document.querySelectorAll<HTMLElement>('#statement-list .statement-line')]
+    expect(lines).toHaveLength(3)
+    expect(lines[2]?.textContent).toContain('+150')
+    expect(lines[2]?.textContent).toContain('200')
+    expect(document.querySelector('#statement-list [data-txn-id="usd-1"]')).toBeNull()
+    expect(document.querySelector('#other-currency-note')?.textContent).toContain('20 USD')
+
+    click('#direction-tabs button:nth-child(2)')
+    expect(document.querySelector('#other-currency-note')).toBeNull()
   })
 
   it('shows an empty statement and disables settlement for the zero direction', async () => {

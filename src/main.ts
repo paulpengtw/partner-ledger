@@ -8,6 +8,7 @@ import {
   submitTransaction,
   type CounterpartyOptions,
   type LedgerTransaction,
+  type ListResult,
   type PayableDirection,
 } from './api'
 import { startSessionGuard } from './auth'
@@ -64,6 +65,8 @@ function deriveStatementLines(
 
   for (const transaction of [...transactions].reverse()) {
     if (transaction.voided || transaction['沖銷txn_id'].trim()) continue
+    // This statement is in TWD; another currency is listed apart.
+    if ((transaction.幣別 ?? 'TWD') !== 'TWD') continue
 
     const amount = Number(transaction.金額)
     if (!Number.isFinite(amount) || amount <= 0) continue
@@ -71,6 +74,12 @@ function deriveStatementLines(
     let effect = 0
     if (transaction.分類 === '結清') {
       if (transaction.付款人 === direction.debtor) effect = -amount
+    } else if (transaction.分類 === '退款') {
+      // The refund's recipient now holds the other person's share of it.
+      if (transaction.付款人 === direction.debtor) {
+        if (transaction.分攤方式 === '這筆平分') effect = amount / 2
+        if (transaction.分攤方式 === '幫狗狗付') effect = amount
+      }
     } else if (transaction.付款人 === direction.creditor) {
       if (transaction.分攤方式 === '這筆平分') effect = amount / 2
       if (transaction.分攤方式 === '幫狗狗付') effect = amount
@@ -99,6 +108,7 @@ export function mountApp(
   let activeView: View = 'entry'
   let transactions: LedgerTransaction[] = []
   let directions: PayableDirection[] = []
+  let otherCurrencies: NonNullable<ListResult['payables']['otherCurrencies']> = []
   let selectedDirectionIndex = 0
   let settleAmountText = ''
   let settleNote = ''
@@ -452,6 +462,21 @@ export function mountApp(
     outstandingUnit.className = 'balance-unit'
     outstandingUnit.textContent = '元 · 目前方向的逐列結餘'
     summary.appendChild(outstandingUnit)
+    const others = direction
+      ? otherCurrencies
+          .map((group) => ({
+            currency: group.currency,
+            outstanding: group.directions.find((one) => one.debtor === direction.debtor)?.outstanding ?? 0,
+          }))
+          .filter((group) => group.outstanding !== 0)
+      : []
+    if (others.length > 0) {
+      const otherNote = document.createElement('span')
+      otherNote.id = 'other-currency-note'
+      otherNote.className = 'balance-unit'
+      otherNote.textContent = `另有 ${others.map((group) => `${formatAmount(group.outstanding)} ${group.currency}`).join('、')}，依原幣別分開計算，未計入上方金額`
+      summary.appendChild(otherNote)
+    }
     panel.appendChild(summary)
 
     const statementHeading = document.createElement('div')
@@ -460,7 +485,7 @@ export function mountApp(
     statementTitle.textContent = '對帳明細'
     statementHeading.appendChild(statementTitle)
     const statementLegend = document.createElement('span')
-    statementLegend.textContent = '＋分攤　−結清'
+    statementLegend.textContent = '＋分攤／退款　−結清'
     statementHeading.appendChild(statementLegend)
     panel.appendChild(statementHeading)
 
@@ -626,6 +651,7 @@ export function mountApp(
     if (result === null) {
       transactions = []
       directions = []
+      otherCurrencies = []
       selectedDirectionIndex = 0
       settleAmountText = ''
       settleNote = ''
@@ -633,6 +659,7 @@ export function mountApp(
     } else {
       transactions = result.transactions
       directions = result.payables.directions
+      otherCurrencies = result.payables.otherCurrencies ?? []
       selectedDirectionIndex = Math.min(
         selectedDirectionIndex,
         Math.max(0, directions.length - 1),

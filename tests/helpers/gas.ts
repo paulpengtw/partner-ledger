@@ -561,6 +561,7 @@ export type FakeDoPostEvent = {
 
 type SetupGasFunctions = {
   setupSpreadsheet: () => void
+  setupIntegrationSheet: () => void
   doPost: (event: FakeDoPostEvent) => FakeTextOutput
   weeklyBackup: () => Record<string, unknown>
   pruneBackups_: (
@@ -815,6 +816,7 @@ export function loadGasFunctionsWithFakeGas(): FakeGasHarness {
       source,
       'return {',
       '  setupSpreadsheet: typeof setupSpreadsheet === "function" ? setupSpreadsheet : undefined,',
+      '  setupIntegrationSheet: typeof setupIntegrationSheet === "function" ? setupIntegrationSheet : undefined,',
       '  doPost: typeof doPost === "function" ? doPost : undefined,',
       '  weeklyBackup: typeof weeklyBackup === "function" ? weeklyBackup : undefined,',
       '  pruneBackups_: typeof pruneBackups_ === "function" ? pruneBackups_ : undefined,',

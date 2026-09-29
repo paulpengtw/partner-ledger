@@ -15,6 +15,10 @@ var CATEGORY_SHEET_NAME = '分類';
 var PARTNER_SETTING_PREFIX = '夥伴:';
 var SPLIT_MODES = ['這筆平分', '幫狗狗付', '幫自己付'];
 var SETTLEMENT_CATEGORY = '結清';
+// A refund of a shared purchase, written only by the dashboard import.
+var REFUND_CATEGORY = '退款';
+// Optional: a book without this column holds only BOOK_CURRENCY amounts.
+var CURRENCY_HEADER = '幣別';
 
 var MAX_LIST_TRANSACTIONS = 200;
 var MAX_SNAPSHOT_RECORDS = 200;
@@ -230,7 +234,7 @@ function getOptions_() {
   var categories = readCategories_(spreadsheet);
   var selectable = [];
   for (var index = 0; index < categories.length; index += 1) {
-    if (categories[index] !== SETTLEMENT_CATEGORY) {
+    if (categories[index] !== SETTLEMENT_CATEGORY && categories[index] !== REFUND_CATEGORY) {
       selectable.push(categories[index]);
     }
   }
@@ -308,6 +312,7 @@ function listTransactions_(payload) {
       transaction[header] = String(row[header] === undefined ? '' : row[header]);
     }
     // 金額 is a number in display values (already stringified above from getDisplayValues)
+    transaction['幣別'] = row['幣別'];
     transaction['voided'] = txnId !== '' && Object.prototype.hasOwnProperty.call(voidedIds, txnId);
     transaction['sheetRow'] = row['sheetRow'];
     matches.push(transaction);
@@ -333,6 +338,7 @@ function listTransactions_(payload) {
     for (hIdx = 0; hIdx < ENTRY_HEADERS.length; hIdx += 1) {
       out[ENTRY_HEADERS[hIdx]] = matches[resultIndex][ENTRY_HEADERS[hIdx]];
     }
+    out['幣別'] = matches[resultIndex]['幣別'];
     out['voided'] = matches[resultIndex]['voided'];
     result.push(out);
   }
@@ -488,14 +494,18 @@ function snapshotEntryRecords_(rows, partnerNames, operations) {
     if (!settlement && SPLIT_MODES.indexOf(split) === -1) {
       throw new Error('invalid 分攤方式 at row ' + sheetRow);
     }
+    var currency = String(row[CURRENCY_HEADER] || BOOK_CURRENCY);
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      throw new Error('invalid 幣別 at row ' + sheetRow);
+    }
     var reverses = String(row['沖銷txn_id'] || '').trim();
     records.push({
       id: txnId === '' ? null : txnId,
       revision: entryRevision_(row),
       sheetRow: sheetRow,
-      kind: settlement ? 'settlement' : 'expense',
+      kind: settlement ? 'settlement' : category === REFUND_CATEGORY ? 'refund' : 'expense',
       financialDate: date,
-      amount: { amount: entryAmountText_(row, sheetRow), currency: BOOK_CURRENCY },
+      amount: { amount: entryAmountText_(row, sheetRow), currency: currency },
       payer: payer,
       otherParty: partnerNames[1 - payerIndex],
       split: settlement ? null : split,
@@ -712,18 +722,31 @@ function command_(payload) {
 
 function createAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content) {
   var partners = readPartners_(spreadsheet);
-  var built = agreementEntry_(content, partners.names, readCategories_(spreadsheet), operationId);
+  var built = agreementEntry_(content, partners.names, readCategories_(spreadsheet), operationId,
+    currencyColumn_(entries) > 0);
   if (built.error) {
     return rejectedOutcome_(operationId, built.error);
   }
   var existing = rowByTxnId_(rows, operationId);
   if (!existing && built.row['分類'] === SETTLEMENT_CATEGORY) {
     var payables = computePayables_(rows, partners.names);
-    for (var index = 0; index < payables.directions.length; index += 1) {
-      var direction = payables.directions[index];
-      if (direction.debtor === built.row['付款人'] && built.row['金額'] > normalizedAmount_(direction.outstanding)) {
-        return rejectedOutcome_(operationId, 'settlement-exceeds-outstanding');
+    var directions = payables.directions;
+    if (built.row[CURRENCY_HEADER] !== BOOK_CURRENCY) {
+      directions = [];
+      for (var currencyIndex = 0; currencyIndex < payables.otherCurrencies.length; currencyIndex += 1) {
+        if (payables.otherCurrencies[currencyIndex].currency === built.row[CURRENCY_HEADER]) {
+          directions = payables.otherCurrencies[currencyIndex].directions;
+        }
       }
+    }
+    var outstanding = 0;
+    for (var index = 0; index < directions.length; index += 1) {
+      if (directions[index].debtor === built.row['付款人']) {
+        outstanding = normalizedAmount_(directions[index].outstanding);
+      }
+    }
+    if (built.row['金額'] > outstanding) {
+      return rejectedOutcome_(operationId, 'settlement-exceeds-outstanding');
     }
   }
   if (existing) {
@@ -823,7 +846,7 @@ function confirmAgreement_(spreadsheet, entries, columns, rows, operations, oper
 // partner; the book speaks of participant names, so `selfName` says which
 // name is cheng. A USD agreement is refused, never converted: this book has
 // no currency column and would otherwise add it into TWD.
-function agreementEntry_(content, partnerNames, categories, txnId) {
+function agreementEntry_(content, partnerNames, categories, txnId, hasCurrencyColumn) {
   var self = String(content.selfName || '');
   var selfIndex = partnerNames.indexOf(self);
   if (selfIndex === -1) {
@@ -834,12 +857,15 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
     return { error: 'invalid-payer' };
   }
   var payer = content.payer === 'cheng' ? self : other;
-  if (content.purpose !== 'shared-purchase' && content.purpose !== 'shared-settlement') {
-    // A refund needs a correction that keeps both gross directions; until
-    // that command exists nothing is written for it.
+  if (content.purpose !== 'shared-purchase' && content.purpose !== 'shared-settlement' &&
+      content.purpose !== 'shared-refund') {
     return { error: 'purpose-not-supported-by-partner-book' };
   }
   var settlement = content.purpose === 'shared-settlement';
+  // A refund keeps the original purchase and records, beside it, that its
+  // payer now holds the other person's share of what came back. Both gross
+  // directions stay visible and no bank fact is changed.
+  var refund = content.purpose === 'shared-refund';
   var split = '';
   if (settlement) {
     // A settlement is a payment between the two of them; no split applies.
@@ -852,7 +878,8 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
     return { error: 'invalid-allocation' };
   }
   var total = content.total || {};
-  if (total.currency !== BOOK_CURRENCY) {
+  if (typeof total.currency !== 'string' || !/^[A-Z]{3}$/.test(total.currency) ||
+      (total.currency !== BOOK_CURRENCY && !hasCurrencyColumn)) {
     return { error: 'currency-not-supported-by-partner-book' };
   }
   var amountText = String(total.amount || '');
@@ -866,29 +893,30 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
   }
   var category = settlement
     ? SETTLEMENT_CATEGORY
+    : refund ? REFUND_CATEGORY
     : content.category === undefined ? PENDING_CATEGORY : String(content.category);
-  if (!settlement && (category === SETTLEMENT_CATEGORY ||
+  if (!settlement && !refund && (category === SETTLEMENT_CATEGORY || category === REFUND_CATEGORY ||
       (category !== PENDING_CATEGORY && categories.indexOf(category) === -1))) {
     return { error: 'unknown-category' };
   }
-  return {
-    row: entryRow_({
-      txnId: txnId,
-      date: date,
-      amount: Number(amountText),
-      payer: payer,
-      split: split,
-      category: category,
-      payee: settlement ? '' : String(content.payee || ''),
-      enterer: self,
-      source: INTEGRATION_SOURCE,
-      reversalTxnId: '',
-    }),
-  };
+  var row = entryRow_({
+    txnId: txnId,
+    date: date,
+    amount: Number(amountText),
+    payer: payer,
+    split: split,
+    category: category,
+    payee: settlement ? '' : String(content.payee || ''),
+    enterer: self,
+    source: INTEGRATION_SOURCE,
+    reversalTxnId: '',
+  });
+  row[CURRENCY_HEADER] = total.currency;
+  return { row: row };
 }
 
 function sameEntry_(stored, row) {
-  var fields = ['txn_id', '日期', '付款人', '分攤方式', '分類', '來源', '沖銷txn_id'];
+  var fields = ['txn_id', '日期', '付款人', '分攤方式', '分類', '來源', '沖銷txn_id', CURRENCY_HEADER];
   for (var index = 0; index < fields.length; index += 1) {
     if (String(stored[fields[index]] || '') !== String(row[fields[index]] || '')) {
       return false;
@@ -901,6 +929,11 @@ function sameEntry_(stored, row) {
 function setupIntegrationSheet() {
   var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
   initializeBlankSheet_(getOrCreateSheet_(spreadsheet, OPERATIONS_SHEET_NAME), [OPERATION_HEADERS]);
+  // An empty 幣別 cell means TWD, so adding the column changes no amount.
+  var entries = requiredSheet_(spreadsheet, ENTRY_SHEET_NAME);
+  if (currencyColumn_(entries) === 0) {
+    entries.getRange(1, entries.getLastColumn() + 1, 1, 1).setValues([[CURRENCY_HEADER]]);
+  }
 }
 
 function snapshotCursorOffset_(cursor) {
@@ -1289,6 +1322,13 @@ function appendEntry_(entries, columns, row) {
     var header = ENTRY_HEADERS[index];
     values[columns[header] - 1] = row[header];
   }
+  var currencyColumn = currencyColumn_(entries);
+  var currency = row[CURRENCY_HEADER] || BOOK_CURRENCY;
+  if (currencyColumn > 0) {
+    values[currencyColumn - 1] = currency === BOOK_CURRENCY ? '' : currency;
+  } else if (currency !== BOOK_CURRENCY) {
+    throw new Error('this book has no 幣別 column for ' + currency);
+  }
 
   entries.getRange(rowNumber, 1, 1, columnCount).setValues([values]);
   return rowNumber;
@@ -1303,6 +1343,7 @@ function readEntryRows_(entries, columns) {
   var range = entries.getRange(2, 1, lastRow - 1, lastColumn);
   var rawRows = range.getValues();
   var displayRows = range.getDisplayValues();
+  var currencyColumn = currencyColumn_(entries);
   var rows = [];
   for (var rowIndex = 0; rowIndex < rawRows.length; rowIndex += 1) {
     var row = { sheetRow: rowIndex + 2 };
@@ -1312,9 +1353,28 @@ function readEntryRows_(entries, columns) {
     }
     row['金額'] = Number(rawRows[rowIndex][columns['金額'] - 1]);
     row['金額顯示'] = displayRows[rowIndex][columns['金額'] - 1];
+    var currencyText = currencyColumn > 0
+      ? String(displayRows[rowIndex][currencyColumn - 1] || '').trim()
+      : '';
+    row[CURRENCY_HEADER] = currencyText === '' ? BOOK_CURRENCY : currencyText;
     rows.push(row);
   }
   return rows;
+}
+
+// The 1-based 幣別 column, or 0 when the book predates it.
+function currencyColumn_(entries) {
+  var lastColumn = entries.getLastColumn();
+  if (lastColumn === 0) {
+    return 0;
+  }
+  var header = entries.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
+  for (var index = 0; index < header.length; index += 1) {
+    if (String(header[index] || '').trim() === CURRENCY_HEADER) {
+      return index + 1;
+    }
+  }
+  return 0;
 }
 
 function findTxnRow_(journal, txnColumn, idempotencyKey) {
@@ -1625,6 +1685,9 @@ function expandCreateEntry_(input) {
   if (input.category === SETTLEMENT_CATEGORY) {
     throw new Error('分類 結清 is reserved for settlement rows');
   }
+  if (input.category === REFUND_CATEGORY) {
+    throw new Error('分類 退款 is reserved for imported refunds');
+  }
 
   validatePartnerName_(input.enterer, input.partners, '記帳人');
   requireField_(input, 'txnId');
@@ -1744,9 +1807,7 @@ function computePayables_(rows, partners) {
   }
 
   var voided = reversedTxnIds_(rows);
-  var owedBy = Object.create(null);
-  owedBy[partners[0]] = 0;
-  owedBy[partners[1]] = 0;
+  var owedByCurrency = Object.create(null);
 
   for (var index = 0; index < rows.length; index += 1) {
     var row = rows[index];
@@ -1758,23 +1819,59 @@ function computePayables_(rows, partners) {
       continue;
     }
 
+    var currency = String(row[CURRENCY_HEADER] || BOOK_CURRENCY);
+    if (!owedByCurrency[currency]) {
+      owedByCurrency[currency] = Object.create(null);
+      owedByCurrency[currency][partners[0]] = 0;
+      owedByCurrency[currency][partners[1]] = 0;
+    }
+    var owedBy = owedByCurrency[currency];
     var amount = Number(row['金額']);
     var payer = String(row['付款人'] || '');
     var other = payer === partners[0] ? partners[1] : partners[0];
+    var category = String(row['分類'] || '');
 
-    if (String(row['分類'] || '') === SETTLEMENT_CATEGORY) {
+    if (category === SETTLEMENT_CATEGORY) {
       owedBy[payer] -= amount;
-    } else if (row['分攤方式'] === '這筆平分') {
-      owedBy[other] += amount / 2;
-    } else if (row['分攤方式'] === '幫狗狗付') {
-      owedBy[other] += amount;
+    } else if (category === REFUND_CATEGORY) {
+      // The refund's recipient now holds the other person's share of it.
+      owedBy[payer] += shareOf_(row['分攤方式'], amount);
+    } else {
+      owedBy[other] += shareOf_(row['分攤方式'], amount);
     }
   }
 
-  return {
-    directions: [
-      { debtor: partners[0], creditor: partners[1], outstanding: owedBy[partners[0]] },
-      { debtor: partners[1], creditor: partners[0], outstanding: owedBy[partners[1]] },
-    ],
+  var directionsFor = function (owed) {
+    return [
+      { debtor: partners[0], creditor: partners[1], outstanding: owed ? owed[partners[0]] : 0 },
+      { debtor: partners[1], creditor: partners[0], outstanding: owed ? owed[partners[1]] : 0 },
+    ];
   };
+  // The app's balance is in the book's currency; any other currency is kept
+  // apart and never added into it.
+  var otherCurrencies = [];
+  var currencies = Object.keys(owedByCurrency).sort();
+  for (var currencyIndex = 0; currencyIndex < currencies.length; currencyIndex += 1) {
+    if (currencies[currencyIndex] !== BOOK_CURRENCY) {
+      otherCurrencies.push({
+        currency: currencies[currencyIndex],
+        directions: directionsFor(owedByCurrency[currencies[currencyIndex]]),
+      });
+    }
+  }
+  return {
+    directions: directionsFor(owedByCurrency[BOOK_CURRENCY]),
+    otherCurrencies: otherCurrencies,
+  };
+}
+
+// What the non-payer's side of an amount is under a payer-relative split.
+function shareOf_(split, amount) {
+  if (split === '這筆平分') {
+    return amount / 2;
+  }
+  if (split === '幫狗狗付') {
+    return amount;
+  }
+  return 0;
 }

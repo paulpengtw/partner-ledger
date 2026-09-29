@@ -156,7 +156,8 @@ describe('Partner integration commands', () => {
       [{ allocation: 'thirds' }, 'invalid-allocation'],
       [{ category: '結清' }, 'unknown-category'],
       [{ effectiveDate: '20/09/2026' }, 'invalid-effective-date'],
-      [{ purpose: 'shared-refund' }, 'purpose-not-supported-by-partner-book'],
+      [{ purpose: 'refund-of-something' }, 'purpose-not-supported-by-partner-book'],
+      [{ total: { amount: '20', currency: 'usd' } }, 'currency-not-supported-by-partner-book'],
       [{ purpose: undefined }, 'purpose-not-supported-by-partner-book'],
     ]
     for (const [overrides, reason] of cases) {
@@ -178,6 +179,65 @@ describe('Partner integration commands', () => {
     expect(entryRows(harness)[1]).toEqual(['settle-1', '2026-09-20', 600, 'cheng', '', '結清', '', 'cheng', 'dashboard-import', ''])
     const snapshot = await post(harness, { action: 'snapshot', scope: 'agreements' })
     expect(snapshot.records[1]).toMatchObject({ kind: 'settlement', split: null, origin: 'integration' })
+  })
+
+  it('records a refund beside the purchase, so both gross directions stay visible', async () => {
+    await post(harness, command('buy', agreement({ total: { amount: '1200', currency: 'TWD' } })))
+    await post(harness, command('refund', agreement({ purpose: 'shared-refund', total: { amount: '1200', currency: 'TWD' } })))
+    expect(entryRows(harness).map((row) => [row[0], row[3], row[4], row[5]])).toEqual([
+      ['buy', 'cheng', '這筆平分', '尚未分類'],
+      ['refund', 'cheng', '這筆平分', '退款'],
+    ])
+    const snapshot = await post(harness, { action: 'snapshot', scope: 'agreements' })
+    expect(snapshot.records[1]).toMatchObject({ kind: 'refund', split: '這筆平分', payer: 'cheng' })
+    // 翊 still owes the original 600; cheng now owes 翊 their 600 of the refund.
+    const list = await post(harness, { action: 'list_transactions', date_from: '2026-01-01', date_to: '2026-12-31' })
+    expect(list.payables.directions).toEqual([
+      { debtor: 'cheng', creditor: '翊', outstanding: 600 },
+      { debtor: '翊', creditor: 'cheng', outstanding: 600 },
+    ])
+  })
+
+  it('keeps another currency apart once the book has a 幣別 column', async () => {
+    expect(await post(harness, command('usd-before', agreement({ total: { amount: '20', currency: 'USD' } }))))
+      .toMatchObject({ kind: 'rejected', reason: 'currency-not-supported-by-partner-book' })
+
+    harness.setupIntegrationSheet()
+    harness.setupIntegrationSheet()
+    const header = harness.spreadsheet.getSheetByName('帳目')!.getRange(1, 1, 1, 11).getValues()[0]!
+    expect(header.filter((cell) => cell === '幣別')).toHaveLength(1)
+
+    await post(harness, command('twd', agreement({ total: { amount: '100', currency: 'TWD' } })))
+    await post(harness, command('usd', agreement({ total: { amount: '20', currency: 'USD' } })))
+    const snapshot = await post(harness, { action: 'snapshot', scope: 'agreements' })
+    expect(snapshot.records.map((record: Json) => record.amount)).toEqual([
+      { amount: '100', currency: 'TWD' },
+      { amount: '20', currency: 'USD' },
+    ])
+    const list = await post(harness, { action: 'list_transactions', date_from: '2026-01-01', date_to: '2026-12-31' })
+    expect(list.payables).toEqual({
+      directions: [
+        { debtor: 'cheng', creditor: '翊', outstanding: 0 },
+        { debtor: '翊', creditor: 'cheng', outstanding: 50 },
+      ],
+      otherCurrencies: [{
+        currency: 'USD',
+        directions: [
+          { debtor: 'cheng', creditor: '翊', outstanding: 0 },
+          { debtor: '翊', creditor: 'cheng', outstanding: 10 },
+        ],
+      }],
+    })
+    expect(list.transactions.map((transaction: Json) => transaction['幣別'])).toEqual(['USD', 'TWD'])
+
+    const settleUsd = (id: string, amount: string) => command(id, agreement({
+      purpose: 'shared-settlement', payer: 'partner', allocation: undefined, total: { amount, currency: 'USD' },
+    }))
+    expect(await post(harness, settleUsd('too-much', '11'))).toMatchObject({ reason: 'settlement-exceeds-outstanding' })
+    expect(await post(harness, settleUsd('ok', '10'))).toMatchObject({ kind: 'committed' })
+    expect(await post(harness, command('eur-none', agreement({
+      purpose: 'shared-settlement', payer: 'partner', allocation: undefined, total: { amount: '1', currency: 'EUR' },
+    })))).toMatchObject({ reason: 'settlement-exceeds-outstanding' })
   })
 
   it('accepts an exact decimal amount written with trailing zeros', async () => {

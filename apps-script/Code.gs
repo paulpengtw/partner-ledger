@@ -71,7 +71,12 @@ function integrationStateWithCapabilities_() {
   try {
     var spreadsheet = SpreadsheetApp.openById(requiredProp_('LEDGER_SPREADSHEET_ID'));
     if (operationsSheet_(spreadsheet)) {
-      state.capabilities = state.capabilities.concat(INTEGRATION_CAPABILITIES);
+      // Operations carry a content digest and entries a content revision, so
+      // a changed record or a reused id with other content is a conflict.
+      state.capabilities = state.capabilities.concat(INTEGRATION_CAPABILITIES, ['content-conflict-detection']);
+      if (currencyColumn_(requiredSheet_(spreadsheet, ENTRY_SHEET_NAME)) > 0) {
+        state.capabilities.push('native-currency-groups');
+      }
     }
   } catch (error) {
     // An unreadable integration sheet hides only the capabilities it backs.
@@ -714,6 +719,9 @@ function command_(payload) {
     if (content.kind === 'partner-agreement') {
       return createAgreement_(spreadsheet, entries, columns, rows, operations, operationId, digest, content);
     }
+    if (content.kind === 'link-agreement') {
+      return linkAgreement_(spreadsheet, entries, rows, operations, operationId, digest, content);
+    }
     return rejectedOutcome_(operationId, 'unsupported-command-kind');
   } finally {
     lock.releaseLock();
@@ -764,6 +772,67 @@ function createAgreement_(spreadsheet, entries, columns, rows, operations, opera
     personal_group_id: String(content.groupId || ''),
   });
   return committedOutcome_(operation, readEntryRows_(entries, columns));
+}
+
+// Links an imported purchase to an agreement already in the book instead of
+// appending a second one. The agreement must be exactly what review approved
+// (payer, split, amount, currency and date) and may be linked only once; a
+// repeat for the same Personal group returns the same link.
+function linkAgreement_(spreadsheet, entries, rows, operations, operationId, digest, content) {
+  var agreementId = String(content.agreementId || '');
+  var existing = rowByTxnId_(rows, agreementId);
+  if (!existing) {
+    return rejectedOutcome_(operationId, 'unknown-agreement');
+  }
+  if (String(existing['沖銷txn_id'] || '') !== '' || reversedTxnIds_(rows)[agreementId] ||
+      existing['分類'] === SETTLEMENT_CATEGORY || existing['分類'] === REFUND_CATEGORY) {
+    return rejectedOutcome_(operationId, 'agreement-cannot-be-linked');
+  }
+  if (content.purpose !== 'shared-purchase') {
+    return rejectedOutcome_(operationId, 'purpose-not-supported-by-partner-book');
+  }
+  var partners = readPartners_(spreadsheet);
+  var built = agreementEntry_(content, partners.names, readCategories_(spreadsheet), agreementId,
+    currencyColumn_(entries) > 0);
+  if (built.error) {
+    return rejectedOutcome_(operationId, built.error);
+  }
+  var fields = ['日期', '付款人', '分攤方式', CURRENCY_HEADER];
+  for (var index = 0; index < fields.length; index += 1) {
+    if (String(existing[fields[index]] || '') !== String(built.row[fields[index]] || '')) {
+      return rejectedOutcome_(operationId, 'agreement-does-not-match-the-import');
+    }
+  }
+  if (Number(existing['金額']) !== Number(built.row['金額'])) {
+    return rejectedOutcome_(operationId, 'agreement-does-not-match-the-import');
+  }
+  var groupId = String(content.groupId || '');
+  if (groupId === '') {
+    return rejectedOutcome_(operationId, 'link-needs-a-personal-group');
+  }
+  var recorded = readOperations_(operations);
+  for (var opIndex = 0; opIndex < recorded.length; opIndex += 1) {
+    var linkedGroup = recorded[opIndex].personal_group_id;
+    if (recorded[opIndex].txn_id === agreementId && linkedGroup !== '') {
+      if (linkedGroup !== groupId) {
+        return conflictOutcome_(operationId, 'agreement-already-linked', []);
+      }
+      return committedOutcome_(recordOperation_(operations, {
+        operation_id: operationId,
+        content_digest: digest,
+        kind: 'link-agreement',
+        txn_id: agreementId,
+        personal_group_id: '',
+      }), rows);
+    }
+  }
+  return committedOutcome_(recordOperation_(operations, {
+    operation_id: operationId,
+    content_digest: digest,
+    kind: 'link-agreement',
+    txn_id: agreementId,
+    personal_group_id: groupId,
+  }), rows);
 }
 
 function recordOperation_(operations, operation) {

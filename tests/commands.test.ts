@@ -67,7 +67,7 @@ describe('Partner integration commands', () => {
 
   it('reports outcome capabilities only once the integration sheet exists', async () => {
     expect((await post(harness, { action: 'integrationState' })).capabilities)
-      .toEqual(['complete-revisioned-reads', 'stable-identity', 'durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states'])
+      .toEqual(['complete-revisioned-reads', 'stable-identity', 'durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states', 'content-conflict-detection'])
     const bare = loadGasFunctionsWithFakeGas()
     bootstrap(bare, { integration: false })
     expect((await post(bare, { action: 'integrationState' })).capabilities).toEqual(['complete-revisioned-reads', 'stable-identity'])
@@ -306,5 +306,72 @@ describe('Partner integration commands', () => {
       expect(await post(harness, confirm('confirm-1', reviewed)))
         .toMatchObject({ kind: 'rejected', reason: 'agreement-cannot-be-confirmed' })
     })
+  })
+
+  describe('linking an existing agreement', () => {
+    function seedDinner(): void {
+      harness.spreadsheet.getSheetByName('帳目')!.getRange(2, 1, 1, entryHeaders.length).setValues([
+        ['dinner', '2026-09-20', 1200, 'cheng', '這筆平分', '餐飲', '餐廳', 'cheng', 'web-app', ''],
+      ])
+    }
+    async function dinnerRevision(): Promise<string> {
+      return (await post(harness, { action: 'snapshot', scope: 'agreements' })).records[0].revision
+    }
+    const link = (operationId: string, revision: string, overrides: Record<string, unknown> = {}) =>
+      command(operationId, { ...agreement(), kind: 'link-agreement', agreementId: 'dinner', ...overrides }, {
+        expectedRevisions: [{ id: 'dinner', revision }],
+      })
+
+    it('links the import to the existing agreement once and appends no second expense', async () => {
+      seedDinner()
+      const revision = await dinnerRevision()
+      expect(await post(harness, link('link-1', revision))).toMatchObject({
+        kind: 'committed', destinations: [{ id: 'dinner', revision }],
+      })
+      expect(entryRows(harness)).toHaveLength(1)
+      expect((await post(harness, { action: 'snapshot', scope: 'agreements' })).records[0])
+        .toMatchObject({ id: 'dinner', origin: 'partner', link: { personalGroupId: 'obs-1:group' } })
+
+      expect(await post(harness, link('link-1', revision))).toMatchObject({ kind: 'committed' })
+      expect(await post(harness, link('link-again', revision))).toMatchObject({ kind: 'committed' })
+      expect(await post(harness, link('link-other', revision, { groupId: 'obs-2:group' })))
+        .toMatchObject({ kind: 'conflict', reason: 'agreement-already-linked' })
+      expect(entryRows(harness)).toHaveLength(1)
+    })
+
+    it('refuses a stale, mismatched or unlinkable agreement without writing', async () => {
+      seedDinner()
+      const revision = await dinnerRevision()
+      expect(await post(harness, link('stale', 'old-revision'))).toMatchObject({ kind: 'conflict', reason: 'expected-revision-changed' })
+      expect(await post(harness, link('amount', revision, { total: { amount: '1100', currency: 'TWD' } })))
+        .toMatchObject({ kind: 'rejected', reason: 'agreement-does-not-match-the-import' })
+      expect(await post(harness, link('split', revision, { allocation: 'entirely-partner' })))
+        .toMatchObject({ kind: 'rejected', reason: 'agreement-does-not-match-the-import' })
+      expect(await post(harness, link('unknown', revision, { agreementId: 'nope' })))
+        .toMatchObject({ kind: 'rejected', reason: 'unknown-agreement' })
+      const operations = harness.spreadsheet.getSheetByName('整合操作')!
+      expect(operations.getLastRow()).toBe(1)
+    })
+  })
+
+  it('reports native currency once the book has a 幣別 column', async () => {
+    harness.setupIntegrationSheet()
+    expect((await post(harness, { action: 'integrationState' })).capabilities).toContain('native-currency-groups')
+  })
+
+  it('gives the same content the same revision after a restart', async () => {
+    await post(harness, command('op-1', agreement()))
+    const before = await post(harness, { action: 'snapshot', scope: 'agreements' })
+    const restarted = loadGasFunctionsWithFakeGas()
+    const sheets = ['帳目', '分類', '選項清單', '設定', '整合操作']
+    for (const name of sheets) {
+      const from = harness.spreadsheet.getSheetByName(name)!
+      const to = restarted.spreadsheet.insertSheet(name)
+      to.getRange(1, 1, from.getLastRow(), from.getLastColumn())
+        .setValues(from.getRange(1, 1, from.getLastRow(), from.getLastColumn()).getValues())
+    }
+    const after = await post(restarted, { action: 'snapshot', scope: 'agreements' })
+    expect(after.snapshotRevision).toBe(before.snapshotRevision)
+    expect(after.records[0].revision).toBe(before.records[0].revision)
   })
 })

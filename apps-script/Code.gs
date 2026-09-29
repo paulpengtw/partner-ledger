@@ -682,6 +682,15 @@ function createAgreement_(spreadsheet, entries, columns, rows, operations, opera
     return rejectedOutcome_(operationId, built.error);
   }
   var existing = rowByTxnId_(rows, operationId);
+  if (!existing && built.row['分類'] === SETTLEMENT_CATEGORY) {
+    var payables = computePayables_(rows, partners.names);
+    for (var index = 0; index < payables.directions.length; index += 1) {
+      var direction = payables.directions[index];
+      if (direction.debtor === built.row['付款人'] && built.row['金額'] > normalizedAmount_(direction.outstanding)) {
+        return rejectedOutcome_(operationId, 'settlement-exceeds-outstanding');
+      }
+    }
+  }
   if (existing) {
     if (!sameEntry_(existing, built.row)) {
       return conflictOutcome_(operationId, 'entry-exists-with-different-content', []);
@@ -790,8 +799,16 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
     return { error: 'invalid-payer' };
   }
   var payer = content.payer === 'cheng' ? self : other;
-  var split;
-  if (content.allocation === 'equal-halves') {
+  if (content.purpose !== 'shared-purchase' && content.purpose !== 'shared-settlement') {
+    // A refund needs a correction that keeps both gross directions; until
+    // that command exists nothing is written for it.
+    return { error: 'purpose-not-supported-by-partner-book' };
+  }
+  var settlement = content.purpose === 'shared-settlement';
+  var split = '';
+  if (settlement) {
+    // A settlement is a payment between the two of them; no split applies.
+  } else if (content.allocation === 'equal-halves') {
     split = '這筆平分';
   } else if (content.allocation === 'entirely-cheng' || content.allocation === 'entirely-partner') {
     var payerBears = (content.allocation === 'entirely-cheng') === (content.payer === 'cheng');
@@ -812,9 +829,11 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return { error: 'invalid-effective-date' };
   }
-  var category = content.category === undefined ? PENDING_CATEGORY : String(content.category);
-  if (category === SETTLEMENT_CATEGORY ||
-      (category !== PENDING_CATEGORY && categories.indexOf(category) === -1)) {
+  var category = settlement
+    ? SETTLEMENT_CATEGORY
+    : content.category === undefined ? PENDING_CATEGORY : String(content.category);
+  if (!settlement && (category === SETTLEMENT_CATEGORY ||
+      (category !== PENDING_CATEGORY && categories.indexOf(category) === -1))) {
     return { error: 'unknown-category' };
   }
   return {
@@ -825,7 +844,7 @@ function agreementEntry_(content, partnerNames, categories, txnId) {
       payer: payer,
       split: split,
       category: category,
-      payee: String(content.payee || ''),
+      payee: settlement ? '' : String(content.payee || ''),
       enterer: self,
       source: INTEGRATION_SOURCE,
       reversalTxnId: '',

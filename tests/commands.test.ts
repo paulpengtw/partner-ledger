@@ -38,6 +38,7 @@ function bootstrap(harness: FakeGasHarness, { integration = true } = {}): void {
 
 const agreement = (overrides: Record<string, unknown> = {}) => ({
   kind: 'partner-agreement',
+  purpose: 'shared-purchase',
   groupId: 'obs-1:group',
   selfName: 'cheng',
   payer: 'cheng',
@@ -155,6 +156,8 @@ describe('Partner integration commands', () => {
       [{ allocation: 'thirds' }, 'invalid-allocation'],
       [{ category: '結清' }, 'unknown-category'],
       [{ effectiveDate: '20/09/2026' }, 'invalid-effective-date'],
+      [{ purpose: 'shared-refund' }, 'purpose-not-supported-by-partner-book'],
+      [{ purpose: undefined }, 'purpose-not-supported-by-partner-book'],
     ]
     for (const [overrides, reason] of cases) {
       expect(await post(harness, command(`bad-${reason}`, agreement(overrides))), reason)
@@ -163,6 +166,18 @@ describe('Partner integration commands', () => {
     expect(await post(harness, command('x', { kind: 'settle' })))
       .toEqual({ kind: 'rejected', operationId: 'x', reason: 'unsupported-command-kind' })
     expect(entryRows(harness)).toEqual([])
+  })
+
+  it('records a shared settlement as a 結清 row and refuses one larger than what is owed', async () => {
+    await post(harness, command('owed', agreement({ payer: 'partner', allocation: 'equal-halves' })))
+    const settle = (id: string, amount: string) => command(id, agreement({
+      purpose: 'shared-settlement', payer: 'cheng', allocation: undefined, total: { amount, currency: 'TWD' },
+    }))
+    expect(await post(harness, settle('too-much', '601'))).toMatchObject({ kind: 'rejected', reason: 'settlement-exceeds-outstanding' })
+    expect(await post(harness, settle('settle-1', '600'))).toMatchObject({ kind: 'committed' })
+    expect(entryRows(harness)[1]).toEqual(['settle-1', '2026-09-20', 600, 'cheng', '', '結清', '', 'cheng', 'dashboard-import', ''])
+    const snapshot = await post(harness, { action: 'snapshot', scope: 'agreements' })
+    expect(snapshot.records[1]).toMatchObject({ kind: 'settlement', split: null, origin: 'integration' })
   })
 
   it('accepts an exact decimal amount written with trailing zeros', async () => {

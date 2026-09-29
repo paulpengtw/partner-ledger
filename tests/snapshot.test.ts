@@ -44,14 +44,14 @@ function row(txnId: string, overrides: Partial<Record<string, unknown>> = {}): u
 }
 
 describe('integration state', () => {
-  it('names the book and reports only the complete-read capability', async () => {
+  it('names the book and reports its read capabilities', async () => {
     const harness = loadGasFunctionsWithFakeGas()
     const state = await post(harness, { action: 'integrationState' })
     expect(state).toMatchObject({
       book: 'partner',
       identity: { contractVersion: CONTRACT_VERSION, appVersion: APP_VERSION },
       maintenance: { kind: 'open' },
-      capabilities: ['complete-revisioned-reads'],
+      capabilities: ['complete-revisioned-reads', 'stable-identity'],
     })
     expect(state.readAt).toMatch(/^\d{4}-\d{2}-\d{2}T.*\+08:00$/)
   })

@@ -20,7 +20,9 @@ var MAX_LIST_TRANSACTIONS = 200;
 var MAX_SNAPSHOT_RECORDS = 200;
 // The book has no currency column: the entry app records every amount in TWD.
 var BOOK_CURRENCY = 'TWD';
-var PARTNER_CAPABILITIES = ['complete-revisioned-reads'];
+// txn_id is each entry's stable identity: the snapshot refuses duplicates and
+// exposes an entry without one as unidentified (null) rather than guessing.
+var PARTNER_CAPABILITIES = ['complete-revisioned-reads', 'stable-identity'];
 // Durable dashboard-import operations. The sheet is created by the editor-run
 // setupIntegrationSheet(); until it exists, commands answer unavailable.
 var OPERATIONS_SHEET_NAME = '整合操作';

@@ -67,10 +67,10 @@ describe('Partner integration commands', () => {
 
   it('reports outcome capabilities only once the integration sheet exists', async () => {
     expect((await post(harness, { action: 'integrationState' })).capabilities)
-      .toEqual(['complete-revisioned-reads', 'durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states'])
+      .toEqual(['complete-revisioned-reads', 'stable-identity', 'durable-operation-outcomes', 'link-metadata', 'pending-confirmation-states'])
     const bare = loadGasFunctionsWithFakeGas()
     bootstrap(bare, { integration: false })
-    expect((await post(bare, { action: 'integrationState' })).capabilities).toEqual(['complete-revisioned-reads'])
+    expect((await post(bare, { action: 'integrationState' })).capabilities).toEqual(['complete-revisioned-reads', 'stable-identity'])
     expect(await post(bare, command('op-1', agreement())))
       .toEqual({ kind: 'unavailable', book: 'partner', reason: 'integration-schema-unavailable' })
   })

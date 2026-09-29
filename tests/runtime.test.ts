@@ -26,7 +26,8 @@ describe('integration runtime', () => {
     const harness = loadGasFunctionsWithFakeGas()
     harness.setScriptProperty('INTEGRATION_OPEN', '')
     harness.clearEvents()
-    expect(await post(harness, { action: 'integrationState' }, 'state-1')).toEqual({
+    expect(await post(harness, { action: 'integrationState' }, 'state-1')).toMatchObject({
+      book: 'partner',
       identity: { contractVersion: CONTRACT_VERSION, appVersion: APP_VERSION },
       maintenance: { kind: 'maintenance', message: '系統更新中' },
     })

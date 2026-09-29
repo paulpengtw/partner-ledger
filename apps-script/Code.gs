@@ -17,6 +17,10 @@ var SPLIT_MODES = ['這筆平分', '幫狗狗付', '幫自己付'];
 var SETTLEMENT_CATEGORY = '結清';
 
 var MAX_LIST_TRANSACTIONS = 200;
+var MAX_SNAPSHOT_RECORDS = 200;
+// The book has no currency column: the entry app records every amount in TWD.
+var BOOK_CURRENCY = 'TWD';
+var PARTNER_CAPABILITIES = ['complete-revisioned-reads'];
 var NONCE_CACHE_SECONDS = 600;
 var LOCK_WAIT_MILLISECONDS = 30000;
 var SCHEMA_SHEET_NAMES = ['分類', '選項清單', '設定'];
@@ -32,8 +36,11 @@ function integrationState_() {
   }
   var open = PropertiesService.getScriptProperties().getProperty('INTEGRATION_OPEN') === 'true';
   return {
+    book: 'partner',
     identity: { contractVersion: CONTRACT_VERSION, appVersion: APP_VERSION },
     maintenance: open ? { kind: 'open' } : { kind: 'maintenance', message: '系統更新中' },
+    capabilities: PARTNER_CAPABILITIES.slice(),
+    readAt: taipeiIsoNow_(),
   };
 }
 
@@ -108,6 +115,9 @@ function route_(payload, nonce) {
   }
   if (action === 'list_transactions') {
     return listTransactions_(payload);
+  }
+  if (action === 'snapshot') {
+    return snapshot_(payload);
   }
   if (action === 'create_transaction') {
     return createTransaction_(payload, nonce);
@@ -294,6 +304,172 @@ function listTransactions_(payload) {
     transactions: result,
     payables: computePayables_(rows, partners.names),
   };
+}
+
+// A complete, revision-pinned read of every ledger entry for the dashboard.
+// Unlike list_transactions it is never capped: a page that is not the last
+// names a cursor, and every page belongs to one stated revision.
+function snapshot_(payload) {
+  if (!payload || payload.scope !== 'agreements') {
+    throw new Error('snapshot scope must be agreements');
+  }
+  if (payload.interval !== undefined) {
+    throw new Error('snapshot interval is not supported');
+  }
+  if (payload.cursor !== undefined && payload.snapshotRevision === undefined) {
+    throw new Error('snapshot continuation requires snapshotRevision');
+  }
+
+  var spreadsheet = SpreadsheetApp.openById(
+    requiredProp_('LEDGER_SPREADSHEET_ID'),
+  );
+  var partners = readPartners_(spreadsheet);
+  var entries = requiredSheet_(spreadsheet, ENTRY_SHEET_NAME);
+  var headerRow = entries
+    .getRange(1, 1, 1, entries.getLastColumn())
+    .getDisplayValues()[0];
+  var columns = resolveHeaders_(headerRow, ENTRY_HEADERS);
+  var rows = readEntryRows_(entries, columns);
+  var revision = digestHex_(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify({ partners: partners.names, rows: rows }),
+  ));
+  if (
+    payload.snapshotRevision !== undefined &&
+    String(payload.snapshotRevision) !== revision
+  ) {
+    return {
+      kind: 'revision-changed',
+      book: 'partner',
+      expected: String(payload.snapshotRevision),
+      actual: revision,
+    };
+  }
+
+  var records = snapshotEntryRecords_(rows, partners.names);
+  var offset = snapshotCursorOffset_(payload.cursor);
+  if (offset > records.length) {
+    throw new Error('snapshot cursor is outside the result');
+  }
+  var page = records.slice(offset, offset + MAX_SNAPSHOT_RECORDS);
+  var nextOffset = offset + page.length;
+  return {
+    scope: 'agreements',
+    snapshotRevision: revision,
+    records: page,
+    continuation: nextOffset < records.length
+      ? { kind: 'cursor', cursor: String(nextOffset) }
+      : { kind: 'end' },
+    readAt: taipeiIsoNow_(),
+  };
+}
+
+// Every non-blank entry row as a typed record. A row that cannot be read
+// exactly fails the whole snapshot: a Settlement computed from the rows that
+// happened to parse is not a Settlement.
+function snapshotEntryRecords_(rows, partnerNames) {
+  var reversedBy = Object.create(null);
+  var seenIds = Object.create(null);
+  var index;
+  for (index = 0; index < rows.length; index += 1) {
+    var reversal = String(rows[index]['沖銷txn_id'] || '');
+    if (reversal !== '') {
+      if (reversedBy[reversal]) {
+        throw new Error('entry reversed twice: ' + reversal);
+      }
+      reversedBy[reversal] = String(rows[index]['txn_id'] || '');
+    }
+  }
+
+  var records = [];
+  for (index = 0; index < rows.length; index += 1) {
+    var row = rows[index];
+    if (entryRowIsBlank_(row)) {
+      continue;
+    }
+    var sheetRow = row.sheetRow;
+    var txnId = String(row['txn_id'] || '').trim();
+    if (txnId !== '') {
+      if (seenIds[txnId]) {
+        throw new Error('duplicate txn_id at row ' + sheetRow);
+      }
+      seenIds[txnId] = true;
+    }
+    var date = String(row['日期'] || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new Error('invalid 日期 at row ' + sheetRow);
+    }
+    var payer = String(row['付款人'] || '').trim();
+    var payerIndex = partnerNames.indexOf(payer);
+    if (payerIndex === -1) {
+      throw new Error('unknown 付款人 at row ' + sheetRow);
+    }
+    var category = String(row['分類'] || '').trim();
+    var settlement = category === SETTLEMENT_CATEGORY;
+    var split = String(row['分攤方式'] || '').trim();
+    if (!settlement && SPLIT_MODES.indexOf(split) === -1) {
+      throw new Error('invalid 分攤方式 at row ' + sheetRow);
+    }
+    var reverses = String(row['沖銷txn_id'] || '').trim();
+    records.push({
+      id: txnId === '' ? null : txnId,
+      revision: digestHex_(Utilities.computeDigest(
+        Utilities.DigestAlgorithm.SHA_256,
+        JSON.stringify(row),
+      )),
+      sheetRow: sheetRow,
+      kind: settlement ? 'settlement' : 'expense',
+      financialDate: date,
+      amount: { amount: entryAmountText_(row, sheetRow), currency: BOOK_CURRENCY },
+      payer: payer,
+      otherParty: partnerNames[1 - payerIndex],
+      split: settlement ? null : split,
+      category: category,
+      reverses: reverses === '' ? null : reverses,
+      reversedBy: txnId !== '' && reversedBy[txnId] !== undefined
+        ? reversedBy[txnId]
+        : null,
+      source: String(row['來源'] || ''),
+    });
+  }
+  return records;
+}
+
+function entryRowIsBlank_(row) {
+  for (var index = 0; index < ENTRY_HEADERS.length; index += 1) {
+    var header = ENTRY_HEADERS[index];
+    var value = header === '金額' ? row['金額顯示'] : row[header];
+    if (String(value === undefined || value === null ? '' : value).trim() !== '') {
+      return false;
+    }
+  }
+  return true;
+}
+
+// The stored amount as an exact positive decimal string, never a float that
+// has already been rounded for display.
+function entryAmountText_(row, sheetRow) {
+  var amount = row['金額'];
+  var text = typeof amount === 'number' && isFinite(amount) ? String(amount) : '';
+  if (!/^\d+(\.\d+)?$/.test(text) || Number(text) <= 0) {
+    throw new Error('invalid 金額 at row ' + sheetRow);
+  }
+  return text;
+}
+
+function snapshotCursorOffset_(cursor) {
+  if (cursor === undefined) {
+    return 0;
+  }
+  var text = String(cursor);
+  if (!/^(0|[1-9]\d*)$/.test(text)) {
+    throw new Error('invalid snapshot cursor');
+  }
+  var offset = Number(text);
+  if (!Number.isSafeInteger(offset)) {
+    throw new Error('invalid snapshot cursor');
+  }
+  return offset;
 }
 
 function normalizedAmount_(amount) {
